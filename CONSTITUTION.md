@@ -5,7 +5,9 @@
 
 ## Purpose
 
-Establishes the governing principles of the Atlas OS specification and the
-process by which the specification is amended.
+This document will establish the external engineering principles governing how
+Atlas OS is designed and maintained. It is external to the normative Atlas OS
+Specification and does not define the specification's versioning, acceptance,
+amendment, or supersession process.
 
 Content intentionally pending authoring.

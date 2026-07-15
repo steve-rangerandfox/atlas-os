@@ -19,9 +19,14 @@ governance, decision history, and supporting documentation.
 | `docs/`           | Non-normative supporting documentation, guides, and background.          |
 | `diagrams/`       | Source and rendered diagrams referenced by the specification.            |
 | `release-notes/`  | Per-release notes describing changes to the specification.               |
-| `CONSTITUTION.md` | The governing principles and amendment process for the specification.    |
+| `CONSTITUTION.md` | The external Engineering Constitution — engineering principles governing how Atlas OS is designed and maintained; external to the normative specification. |
 | `CHANGELOG.md`    | A chronological record of notable changes to this repository.            |
 | `LICENSE`         | The license governing use of this specification.                         |
+
+Specification governance — versioning, acceptance, amendment, and supersession
+of the normative specification — is owned by
+[`spec/00-specification-governance.md`](spec/00-specification-governance.md), not
+by the Engineering Constitution.
 
 ## Status
 
