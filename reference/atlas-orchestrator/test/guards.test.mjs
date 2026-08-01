@@ -69,7 +69,7 @@ test("worker refuses to execute when the mission branch is not checked out", { t
     });
     const job = await waitForJob(delegated.job_id);
     assert.equal(job.status, "failed", JSON.stringify(job, null, 2));
-    assert.equal(job.error.code, "MISSION_BRANCH_MISMATCH");
+    assert.equal(job.error.error, "MISSION_BRANCH_MISMATCH");
   } finally {
     old.home === undefined ? delete process.env.ORCH_HOME : process.env.ORCH_HOME = old.home;
     old.claude === undefined ? delete process.env.ORCH_CLAUDE_BIN : process.env.ORCH_CLAUDE_BIN = old.claude;
