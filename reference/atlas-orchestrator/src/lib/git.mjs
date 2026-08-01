@@ -50,7 +50,7 @@ export async function ensureOrchestratorIgnored(repoRoot) {
   const lines = contents.split(/\r?\n/).map((line) => line.trim());
   if (!lines.includes(".orchestrator/")) {
     const prefix = contents.length && !contents.endsWith("\n") ? "\n" : "";
-    await appendFile(excludePath, `${prefix}# ChatGPT-Claude orchestrator state\n.orchestrator/\n`);
+    await appendFile(excludePath, `${prefix}# Atlas Orchestrator state\n.orchestrator/\n`);
   }
 }
 
@@ -81,13 +81,13 @@ export async function getDiff(repoRoot, filePath = undefined, maxOutputChars = 8
   const stagedArgs = ["diff", "--cached", "--no-ext-diff", "--no-color"];
   if (filePath) stagedArgs.push("--", filePath);
   const staged = await git(repoRoot, stagedArgs, { rejectOnNonZero: false, maxOutputChars });
-  const untracked = filePath
-    ? ""
-    : (await getChangedFiles(repoRoot)).filter((entry) => entry.status === "??").map((entry) => entry.path).join("\n");
+  const untrackedFiles = (await getChangedFiles(repoRoot))
+    .filter((entry) => entry.status === "??" && (!filePath || entry.path === filePath))
+    .map((entry) => entry.path);
   return {
     unstaged: unstaged.stdout,
     staged: staged.stdout,
-    untrackedFiles: untracked ? untracked.split("\n") : []
+    untrackedFiles
   };
 }
 
