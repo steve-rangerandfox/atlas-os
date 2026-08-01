@@ -8,7 +8,7 @@ export function getConfig() {
     ? requestedPermissionMode
     : "acceptEdits";
   return {
-    home: path.resolve(process.env.ORCH_HOME || path.join(os.homedir(), ".chatgpt-claude-orchestrator")),
+    home: path.resolve(process.env.ORCH_HOME || path.join(os.homedir(), ".atlas-orchestrator")),
     claudeBin: process.env.ORCH_CLAUDE_BIN || "claude",
     claudeModel: process.env.ORCH_CLAUDE_MODEL || "",
     codexBin: process.env.ORCH_CODEX_BIN || "codex",
