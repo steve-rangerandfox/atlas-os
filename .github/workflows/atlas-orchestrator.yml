@@ -1,0 +1,35 @@
+name: Atlas Orchestrator
+
+on:
+  pull_request:
+    paths:
+      - "reference/atlas-orchestrator/**"
+      - ".github/workflows/atlas-orchestrator.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "reference/atlas-orchestrator/**"
+      - ".github/workflows/atlas-orchestrator.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: reference/atlas-orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm test
+      - run: npm run smoke
+      - run: node --check src/mcp-server.mjs
+      - run: node --check src/worker.mjs
+      - run: node --check src/lib/tools.mjs
+      - run: node --check src/lib/git.mjs
+      - run: bash -n scripts/install-local.sh
