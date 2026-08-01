@@ -1,84 +1,80 @@
 # Atlas Orchestrator
 
-A private, human-supervised MCP bridge that lets a ChatGPT conversation coordinate Claude Code inside a Git repository.
+A non-normative reference implementation for coordinating bounded software-engineering missions across many repositories with human supervision.
 
-The point is simple: **ChatGPT is the controller, Claude Code is the implementer, Git is the evidence trail, and you step in only at explicit gates.** No more copying prompts and results between two chat windows.
+Atlas Orchestrator keeps the controller, executor, repository evidence, and human approval boundaries separate:
 
-## What this starter does
+- **ChatGPT** acts as the controller and engineering director.
+- **Claude Code or OpenAI Codex** performs one bounded implementation task at a time.
+- **Git** provides branch, diff, and HEAD evidence.
+- **The human** approves product decisions, sensitive access, publication, destructive actions, and final acceptance.
 
-- Runs as a private stdio MCP server beside your repository, usually in a GitHub Codespace.
-- Lets ChatGPT check readiness, create a mission branch, delegate bounded tasks to Claude Code, wait for jobs, inspect Git state and diffs, run named checks, and pause for human decisions.
-- Stores durable mission and job state under `.orchestrator/` in the target repository and a small lookup index under `~/.atlas-orchestrator/`.
-- Launches Claude Code non-interactively with structured JSON output.
-- Requires a clean Git working tree before every mission.
-- Creates a dedicated `orchestrator/*` branch.
-- Never commits, pushes, opens a pull request, deploys, publishes, or deletes work.
-- Uses no npm dependencies. Node.js is the only JavaScript runtime requirement.
+One orchestrator installation can serve Kit, Relay, Demo Pro, and other projects. Every mission is bound to one repository, working directory, branch, and base commit. The executor is selected per task.
 
-## Architecture
+## Status
 
-```text
-You
-  |
-  v
-ChatGPT / GPT controller
-  |
-  | MCP tool calls through Secure MCP Tunnel
-  v
-Private orchestrator server in your Codespace
-  |-- mission state
-  |-- Git inspection and branch guardrails
-  |-- safe verification runner
-  `-- Claude Code subprocess
-          |
-          `-- reads/edits the checked-out repository
-```
+Version `0.2.0` is a local-first reference implementation. It is useful for isolated development environments and supervised experimentation. It is not a hardened security sandbox, a durable distributed workflow engine, or a production deployment service.
 
-The ChatGPT conversation remains the reasoning and planning layer. This bridge deliberately does not run a second OpenAI API agent; doing so would duplicate the controller and create another state-sync problem.
+This package lives under `reference/` because the Atlas OS specification remains implementation-independent and authoritative within `spec/`.
 
-## The control loop
+## Supported executors
 
-1. `doctor` verifies Git, Claude Code, authentication, and tunnel-client.
-2. `start_mission` requires a clean tree and creates a new branch.
-3. ChatGPT converts the mission into one small, observable task.
-4. `delegate_to_claude` starts a background Claude Code job.
-5. `wait_for_job` returns the result when ready or the current running state.
-6. ChatGPT calls `get_mission` and `get_diff`, evaluates evidence, and either delegates a correction or proceeds.
-7. `run_checks` invokes only safe named checks: `diff-check`, `lint`, `typecheck`, `test`, and `build`.
-8. Any product choice, secret requirement, destructive action, publication step, or final acceptance pauses for you.
-9. `finish_mission` marks the branch ready for human review. It still does not commit or publish anything.
+- `claude` — Claude Code CLI in non-interactive structured-output mode.
+- `codex` — OpenAI Codex CLI through `codex exec` with ephemeral sessions, ignored user rules/config, workspace-write sandboxing, and network disabled for sandboxed commands.
+
+Use `delegate_task` with `executor: "claude"` or `executor: "codex"`. Compatibility aliases `delegate_to_claude` and `delegate_to_codex` are also available.
+
+## Control loop
+
+1. `doctor` checks Git, executor availability/authentication, and tunnel-client availability.
+2. `start_mission` requires a clean tree and creates an `orchestrator/*` branch.
+3. The controller delegates one small task.
+4. A detached worker runs the selected executor.
+5. Named checks run without accepting arbitrary shell commands from MCP.
+6. The controller inspects mission state and the actual Git diff.
+7. Failed checks return a failed job so a bounded correction can be delegated.
+8. Product choices, sensitive changes, branch/HEAD mutations, executor blockers, and final acceptance stop at a human gate.
+9. `finish_mission` marks work ready for review; it does not commit, push, open a pull request, deploy, or publish.
+
+The worker refuses to start when the mission branch is not checked out or when Git HEAD has moved since mission creation.
 
 ## MCP tools
 
 | Tool | Purpose |
 |---|---|
-| `doctor` | Readiness check for the repository, Claude Code, auth, and tunnel-client |
+| `doctor` | Check repository and executor readiness |
 | `start_mission` | Create mission state and a dedicated branch |
-| `delegate_to_claude` | Run one bounded implementation task in the background |
-| `wait_for_job` | Poll a Claude or verification job |
+| `delegate_task` | Run one bounded task with Claude Code or Codex |
+| `delegate_to_claude` | Claude compatibility alias |
+| `delegate_to_codex` | Codex compatibility alias |
+| `wait_for_job` | Poll executor or verification work |
 | `get_mission` | Inspect state, reports, checks, Git status, and gates |
-| `get_diff` | Read the current staged and unstaged patch |
-| `run_checks` | Run named package checks plus `git diff --check` |
-| `record_human_decision` | Save your answer and reopen a paused mission |
-| `finish_mission` | Stop autonomous work and request final review |
-| `abort_mission` | Stop while preserving the branch and local changes |
-| `list_missions` | Find known missions |
+| `get_diff` | Retrieve staged, unstaged, and safe untracked patches |
+| `run_checks` | Run named checks only |
+| `record_human_decision` | Record a human answer and reopen a paused mission |
+| `finish_mission` | Stop autonomous work for final review |
+| `abort_mission` | Stop while preserving branch and changes |
+| `list_missions` | Find known missions across repositories |
 
-## Start here
-
-Follow [START_HERE.md](START_HERE.md). The core local verification is:
+## Quick verification
 
 ```bash
-cd ~/tools/atlas-orchestrator
+cd reference/atlas-orchestrator
 npm test
+npm run smoke
+```
+
+No package installation is required. Node.js 20 or newer is required.
+
+Run a readiness check against a project repository:
+
+```bash
 node src/cli.mjs doctor --repo /workspaces/YOUR_REPOSITORY
 ```
 
-There is no `npm install` step.
+Then follow [START_HERE.md](START_HERE.md) to connect the stdio MCP server to ChatGPT.
 
 ## Local CLI
-
-The CLI calls the same handlers exposed through MCP:
 
 ```bash
 node src/cli.mjs tools
@@ -89,77 +85,47 @@ node src/cli.mjs diff mission_abc123
 node src/cli.mjs wait job_abc123 --timeout 20
 ```
 
-Use the CLI for diagnosis. The normal workflow is through ChatGPT.
+The normal control path is MCP; the CLI is useful for diagnosis.
 
-## Configuration
+## Checks
 
-All settings are optional environment variables. See [`orchestrator.env.example`](orchestrator.env.example).
+The MCP interface accepts only these check names:
 
-Important defaults:
-
-- Permission mode: `acceptEdits`
-- Maximum Claude turns per delegation: `12`
-- Maximum Claude budget per delegation: `$3.00`
-- Claude timeout: `45` minutes
-- Verification timeout per check: `15` minutes
-- Mission delegation cap: `20`
-
-Only `acceptEdits` and `dontAsk` are accepted as Claude permission modes. A request to use `bypassPermissions` is ignored and falls back to `acceptEdits`.
-
-## Repository checks
-
-The verification runner never accepts an arbitrary shell command from ChatGPT. It detects the package manager from the lockfile and invokes an existing root `package.json` script by name:
-
+- `diff-check`
 - `lint`
-- one of `typecheck`, `type-check`, `check:types`, or `types`
+- `typecheck`
 - `test`
 - `build`
 
-It always supports `git diff --check`. A repository script is still code and may have side effects; review scripts before allowing the bridge to run in an unfamiliar repository.
+For package checks, the runner detects npm, pnpm, Yarn, or Bun and invokes an existing root script without a shell. Repository scripts are executable code, so review them before operating on an unfamiliar repository.
 
 ## State and recovery
 
-Mission state lives here:
+Mission and job state is stored under:
 
 ```text
-<repo>/.orchestrator/missions/*.json
-<repo>/.orchestrator/jobs/*.json
+<repo>/.orchestrator/
 ```
 
-The bridge adds `.orchestrator/` to the repository's local `.git/info/exclude`, so state is not committed. The lookup index lives under:
+A lookup index is stored under:
 
 ```text
 ~/.atlas-orchestrator/index.json
 ```
 
-If the MCP connection or ChatGPT conversation disconnects, background jobs and JSON state remain in the Codespace. Reconnect, call `list_missions`, then `get_mission` or `wait_for_job`.
+The repository-local state directory is added to `.git/info/exclude`. If ChatGPT or the MCP tunnel disconnects, reconnect and use `list_missions`. If the machine stops during a job, inspect the repository and job state before re-delegating.
 
-If the Codespace itself stops, active processes stop. The saved state and repository changes remain, but a running job may need to be diagnosed or re-delegated after the Codespace restarts.
+## Safety boundary
 
-## Safety model
+The orchestrator uses layered controls: bounded tools, request scanning, executor-specific settings, branch/HEAD invariants, sensitive-path detection, output redaction, named checks, and human gates. These controls reduce accidental autonomy; they do not guarantee containment against a malicious repository, a compromised executable, an unknown secret location, or a future CLI behavior change.
 
-Read [SECURITY.md](SECURITY.md) before using this with valuable or restricted code. This is a guarded controller, not a perfect sandbox.
+Use a disposable Codespace or development VM with least-privilege credentials. Read [SECURITY.md](SECURITY.md) before connecting valuable repositories.
 
-In particular, do not point it at a repository containing Microsoft, client, legal, or regulated material unless the applicable policy explicitly permits both ChatGPT and Claude to process that material.
+## Further documentation
 
-## Development
-
-```bash
-npm test
-npm run smoke
-node --check src/mcp-server.mjs
-```
-
-The test suite covers MCP initialization, tool discovery, branch creation, detached worker execution, Claude result ingestion through a fake CLI, verification checks, non-publication, safety filtering, and redaction.
-
-## Roadmap after the local MVP works
-
-A production second phase can add:
-
-- a durable hosted workflow for retries, pause/resume, and long-running approvals;
-- a GitHub App and isolated ephemeral worktrees or sandboxes;
-- a small approval and audit dashboard;
-- organization policy, identity, and repository allowlists;
-- pull-request creation as a separately authorized human action.
-
-Do not build that control plane before validating that this bounded local loop produces the behavior you want.
+- [Start Here](START_HERE.md)
+- [Controller Instructions](AGENT_INSTRUCTIONS.md)
+- [Executor Model](EXECUTORS.md)
+- [Security and Trust Model](SECURITY.md)
+- [Atlas Integration Boundary](ATLAS_INTEGRATION.md)
+- [Architecture Notes](docs/ARCHITECTURE.md)
