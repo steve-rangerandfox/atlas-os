@@ -32,10 +32,10 @@ function request(id, method, params = {}) {
 
 try {
   const initialized = await request(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } });
-  if (initialized.result?.serverInfo?.name !== "chatgpt-claude-orchestrator") throw new Error("Unexpected initialize response");
+  if (initialized.result?.serverInfo?.name !== "atlas-orchestrator") throw new Error("Unexpected initialize response");
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
   const tools = await request(2, "tools/list");
-  if (!Array.isArray(tools.result?.tools) || tools.result.tools.length < 8) throw new Error("Tool list is incomplete");
+  if (!Array.isArray(tools.result?.tools) || tools.result.tools.length < 13) throw new Error("Tool list is incomplete");
   console.log(`Smoke test passed: ${tools.result.tools.length} tools discovered.`);
 } finally {
   child.kill("SIGTERM");
