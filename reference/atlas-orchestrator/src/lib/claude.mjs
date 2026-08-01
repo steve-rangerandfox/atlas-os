@@ -43,21 +43,7 @@ const SESSION_SETTINGS = {
   disableArtifact: true,
   autoMemoryEnabled: false,
   permissions: {
-    allow: [
-      "Read",
-      "Glob",
-      "Grep",
-      "Edit",
-      "Write",
-      "Bash(pwd)",
-      "Bash(ls *)",
-      "Bash(rg *)",
-      "Bash(git status *)",
-      "Bash(git diff *)",
-      "Bash(git log *)",
-      "Bash(git show *)",
-      "Bash(git branch --show-current)"
-    ],
+    allow: ["Read", "Glob", "Grep", "Edit", "Write"],
     deny: [
       "Read(./.env)",
       "Read(./.env.*)",
@@ -73,34 +59,14 @@ const SESSION_SETTINGS = {
       "Edit(./.env.*)",
       "Edit(./**/.env)",
       "Edit(./**/.env.*)",
+      "Edit(./secrets/**)",
+      "Edit(./credentials/**)",
       "Write(./.env)",
       "Write(./.env.*)",
       "Write(./**/.env)",
       "Write(./**/.env.*)",
-      "Bash(git commit *)",
-      "Bash(git push *)",
-      "Bash(git reset *)",
-      "Bash(git clean *)",
-      "Bash(git checkout *)",
-      "Bash(git switch *)",
-      "Bash(git merge *)",
-      "Bash(git rebase *)",
-      "Bash(git tag *)",
-      "Bash(gh *)",
-      "Bash(vercel *)",
-      "Bash(npx vercel *)",
-      "Bash(curl *)",
-      "Bash(wget *)",
-      "Bash(ssh *)",
-      "Bash(scp *)",
-      "Bash(sudo *)",
-      "Bash(rm -rf *)",
-      "Bash(dd *)",
-      "Bash(docker *)",
-      "Bash(kubectl *)",
-      "Bash(terraform *)",
-      "Bash(pulumi *)",
-      "Bash(psql *)"
+      "Write(./secrets/**)",
+      "Write(./credentials/**)"
     ]
   }
 };
@@ -109,9 +75,9 @@ function formatList(items, emptyText = "None supplied") {
   return items?.length ? items.map((item, index) => `${index + 1}. ${item}`).join("\n") : emptyText;
 }
 
-export function buildClaudePrompt(mission, task) {
+export function buildExecutorPrompt(mission, task) {
   const decisions = mission.decisions?.map((entry) => `${entry.question}: ${entry.decision}`) || [];
-  return `You are the implementation agent inside a human-supervised coding workflow.
+  return `You are the selected implementation executor inside a human-supervised coding workflow.
 
 MISSION GOAL
 ${mission.goal}
@@ -137,12 +103,14 @@ WORKING RULES
 - Do not read or modify .env files, credentials, private keys, tokens, or secret stores.
 - Do not contact external services or send communications.
 - Do not make a product decision when multiple reasonable choices materially change behavior. Report needs_human instead.
-- The controller will run verification commands after you finish. You may use only the read-only shell commands permitted by the session.
+- The controller will run verification commands after you finish. Do not attempt to run shell commands through another mechanism.
 - Keep changes small, coherent, and reversible.
 - Never include secrets in your report.
 
 Finish by returning the required structured report. If blocked, explain exactly what a human must decide or provide.`;
 }
+
+export const buildClaudePrompt = buildExecutorPrompt;
 
 function parseJsonOutput(stdout) {
   const trimmed = String(stdout || "").trim();
@@ -174,12 +142,13 @@ export async function runClaudeTask({ mission, task }) {
     "--no-session-persistence",
     "--disable-slash-commands",
     "--strict-mcp-config",
-    "--tools", "Bash,Edit,Read,Write,Glob,Grep",
+    "--setting-sources", "",
+    "--tools", "Edit,Read,Write,Glob,Grep",
     "--settings", JSON.stringify(SESSION_SETTINGS)
   ];
   if (config.claudeModel) args.push("--model", config.claudeModel);
 
-  const prompt = buildClaudePrompt(mission, task);
+  const prompt = buildExecutorPrompt(mission, task);
   const result = await runProcess(config.claudeBin, args, {
     cwd: mission.workDir,
     input: prompt,
