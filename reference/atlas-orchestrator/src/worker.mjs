@@ -3,7 +3,7 @@ import { getConfig } from "./lib/config.mjs";
 import { runChecks } from "./lib/checks.mjs";
 import { runClaudeTask } from "./lib/claude.mjs";
 import { runCodexTask } from "./lib/codex.mjs";
-import { asErrorDetails } from "./lib/errors.mjs";
+import { asErrorDetails, OrchestratorError } from "./lib/errors.mjs";
 import { getChangedFiles, getDiffStat, getGitSnapshot } from "./lib/git.mjs";
 import { isSensitivePath, redactObject } from "./lib/redact.mjs";
 import { loadJob, loadMission, updateJob, updateMission } from "./lib/state.mjs";
@@ -23,6 +23,12 @@ async function markTask(missionId, taskId, patch) {
   });
 }
 
+async function runExecutor(mission, task) {
+  if (task.executor === "claude") return await runClaudeTask({ mission, task });
+  if (task.executor === "codex") return await runCodexTask({ mission, task });
+  throw new OrchestratorError(`Unsupported executor: ${task.executor}`, "EXECUTOR_NOT_SUPPORTED");
+}
+
 async function main() {
   const jobId = argValue("--job");
   if (!jobId) throw new Error("Missing --job");
@@ -37,17 +43,30 @@ async function main() {
   });
   await markTask(mission.id, job.taskId, { status: "running", startedAt: nowIso() });
 
-  const before = await getGitSnapshot(mission.repoRoot);
   let executorResult = null;
   let checkResult = null;
 
   try {
+    const before = await getGitSnapshot(mission.repoRoot);
+    if (before.branch !== mission.branch) {
+      throw new OrchestratorError(
+        `Mission branch ${mission.branch} is not checked out`,
+        "MISSION_BRANCH_MISMATCH",
+        { expectedBranch: mission.branch, actualBranch: before.branch }
+      );
+    }
+    if (before.commit !== mission.baseCommit) {
+      throw new OrchestratorError(
+        "Git HEAD changed after the mission started; review the repository before continuing",
+        "MISSION_HEAD_CHANGED",
+        { expectedCommit: mission.baseCommit, actualCommit: before.commit }
+      );
+    }
+
     if (job.kind === "executor") {
       const task = mission.tasks.find((entry) => entry.id === job.taskId);
       if (!task) throw new Error(`Task not found: ${job.taskId}`);
-      executorResult = task.executor === "codex"
-        ? await runCodexTask({ mission, task })
-        : await runClaudeTask({ mission, task });
+      executorResult = await runExecutor(mission, task);
     }
 
     if (job.kind === "checks" || job.checks.length) {
@@ -66,13 +85,31 @@ async function main() {
     const branchChanged = after.branch !== mission.branch;
     const headChanged = after.commit !== before.commit;
     const report = executorResult?.report || null;
-    const reportNeedsHuman = report && (report.status === "needs_human" || report.status === "blocked" || report.blockers?.length);
+    const reportNeedsHuman = report && (
+      report.status === "needs_human" ||
+      report.status === "blocked" ||
+      report.blockers?.length
+    );
+    const verificationFailed = Boolean(checkResult && !checkResult.passed);
 
     const gateReasons = [];
     if (sensitiveChanges.length) gateReasons.push(`Sensitive files changed: ${sensitiveChanges.map((entry) => entry.path).join(", ")}`);
     if (branchChanged) gateReasons.push(`Current branch changed from ${mission.branch} to ${after.branch}`);
     if (headChanged) gateReasons.push("Git HEAD changed during the task; the orchestrator never authorizes commits.");
     if (reportNeedsHuman) gateReasons.push(...(report.blockers?.length ? report.blockers : [report.summary]));
+
+    const failedChecks = verificationFailed
+      ? checkResult.results.filter((entry) => entry.status === "failed").map((entry) => entry.name)
+      : [];
+    const checkError = verificationFailed
+      ? {
+          name: "OrchestratorError",
+          message: `Verification failed: ${failedChecks.join(", ") || "one or more checks"}`,
+          code: "CHECKS_FAILED",
+          details: { failedChecks }
+        }
+      : null;
+    const status = gateReasons.length ? "needs_human" : verificationFailed ? "failed" : "succeeded";
 
     const result = redactObject({
       executor: executorResult,
@@ -87,15 +124,17 @@ async function main() {
     });
 
     await updateJob(jobId, (current) => {
-      current.status = gateReasons.length ? "needs_human" : "succeeded";
+      current.status = status;
       current.finishedAt = nowIso();
       current.result = result;
+      current.error = checkError;
       return current;
     });
 
     await updateMission(mission.id, (current) => {
       current.lastJobId = jobId;
       current.lastResult = result;
+      current.lastError = checkError;
       current.status = gateReasons.length ? "waiting_for_human" : "active";
       current.pendingGate = gateReasons.length
         ? {
@@ -107,11 +146,12 @@ async function main() {
       if (job.taskId) {
         const task = current.tasks.find((entry) => entry.id === job.taskId);
         if (task) {
-          task.status = gateReasons.length ? "needs_human" : "completed";
+          task.status = gateReasons.length ? "needs_human" : verificationFailed ? "failed" : "completed";
           task.finishedAt = nowIso();
           task.report = report;
           task.checks = checkResult;
           task.changedFiles = changedFiles;
+          task.error = checkError;
         }
       }
       return current;
