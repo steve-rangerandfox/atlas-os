@@ -1,71 +1,80 @@
 # Build Report
 
-Build date: 2026-08-01
-Version: 0.1.0
+Build date: 2026-08-02
+Version: 0.3.0
 
 ## Delivered
 
-- Zero-dependency Node.js stdio MCP server.
-- Eleven purpose-built orchestrator tools.
-- Clean-tree enforcement and dedicated mission branches.
-- Detached Claude Code worker with structured output.
-- Permission, tool, hook, secret-path, Git, deployment, and destructive-action guardrails.
-- Named verification runner with npm, pnpm, Yarn, and Bun detection.
+- Zero-dependency Node.js stdio MCP server with thirteen purpose-built tools.
+- Multi-project mission state with clean-tree enforcement and dedicated mission branches.
+- Interchangeable Claude Code and OpenAI Codex executors.
+- Detached executor workers with structured reports and named verification checks.
+- Branch and Git HEAD invariants before and after executor work.
 - Persistent mission/job JSON with atomic writes and filesystem locks.
 - Git status, diff, diff-stat, tracked patch, and safe untracked-file patch retrieval.
-- Human decision recording, final review, and non-destructive abort flows.
-- Codespace and Secure MCP Tunnel setup documentation.
-- Controller instructions and starter prompts.
+- Secret-path blocking, output redaction, request scanning, and human approval gates.
+- Local Codex controller profile using a read-only controller sandbox.
+- Local Claude Code controller profile using Plan mode.
+- Controller/executor same-provider collision prevention with an explicit opt-in override.
+- Controller installation, status, launch, and readiness scripts.
+- ChatGPT Secure MCP Tunnel documentation and a tunnel-independent local controller path.
+- GitHub Actions validation for tests, MCP smoke checks, JavaScript syntax, and shell syntax.
 
-## Verification performed
+## Verification contract
 
-The following commands passed in the build environment:
+The release is validated with:
 
 ```text
 npm test
-  5 tests passed, 0 failed
+  11 tests expected
 
 npm run smoke
-  MCP initialization passed
-  11 tools discovered
+  MCP initialization
+  13 tools discovered
 
 node --check src/mcp-server.mjs
 node --check src/worker.mjs
 node --check src/lib/tools.mjs
 node --check src/lib/git.mjs
+node --check src/lib/controller.mjs
 bash -n scripts/install-local.sh
+bash -n scripts/install-controllers.sh
+bash -n scripts/atlas-controller
 ```
 
-The automated end-to-end test uses a fake Claude executable and a temporary Git repository. It verifies:
+The automated tests use temporary Git repositories and fake Claude/Codex executables. They verify:
 
 - dirty working trees are refused;
-- a mission branch is created;
-- a background worker receives a bounded task;
-- a file is changed;
-- diff output includes the new file;
-- lint, typecheck, test, and diff checks pass;
-- mission state is updated;
-- no Git commit is created;
-- final status requires human review.
+- mission branches are created;
+- background Claude and Codex jobs complete;
+- requested untracked-file diffs are returned;
+- wrong-branch execution is refused;
+- failed checks fail the job and task;
+- mission state and human-review gates are updated;
+- publication and destructive requests are blocked;
+- secrets are redacted;
+- same-provider controller recursion is blocked by default;
+- no Git commit is created by the orchestrator.
 
-## Live integration still required
+## Live integration status
 
-The build environment did not contain the user's Claude Code installation, Claude authentication, OpenAI tunnel credentials, ChatGPT workspace permissions, or `tunnel-client`. Therefore this package has not been exercised against a real Claude session or a live ChatGPT Secure MCP Tunnel.
+The target Codespace has authenticated Claude Code and Codex installations and the orchestrator `doctor` check reports `readyForMission: true` on the merged 0.2.0 baseline. Version 0.3.0 adds local controller bootstrap so the next live validation does not depend on completion of the ChatGPT Secure MCP Tunnel tenant association.
 
-The first live validation is intentionally small:
+The first 0.3.0 live validation is intentionally small:
 
-1. run `npm test` in the Codespace;
-2. run `claude auth status`;
-3. run the local `doctor` command against the target repository;
-4. connect the stdio server through Secure MCP Tunnel;
-5. run a mission that changes one disposable test file;
-6. confirm the diff, checks, and human gate before using it on valuable work.
+1. install the Codex and Claude controller MCP profiles;
+2. launch one controller in its constrained mode;
+3. run `doctor` against a disposable target repository;
+4. start one mission;
+5. delegate one reversible file change to the opposite executor;
+6. inspect the actual diff and checks;
+7. finish at the human review gate without committing or publishing.
 
 ## Known MVP limits
 
-- A stopped Codespace stops active workers and the tunnel.
+- A stopped Codespace stops active workers and local controller sessions.
 - A job may remain recorded as `running` after a hard machine stop; inspect Git state before re-delegating.
-- This is a guarded controller, not a hardened OS sandbox.
+- Controller modes and MCP configuration reduce accidental direct edits but are not a hardened isolation boundary.
 - Secret detection and command blocking are pattern based.
 - Package scripts are repository-controlled executable code.
-- There is no hosted approval dashboard, durable queue, GitHub App, or automated pull-request flow yet.
+- There is no hosted approval dashboard, durable queue, isolated worktree pool, GitHub App, or automated pull-request flow yet.
