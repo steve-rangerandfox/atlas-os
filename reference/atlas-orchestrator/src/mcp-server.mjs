@@ -5,7 +5,7 @@ import { redactObject } from "./lib/redact.mjs";
 import { callTool, toolDefinitions } from "./lib/tools.mjs";
 
 const SERVER_NAME = "atlas-orchestrator";
-const SERVER_VERSION = "0.2.0";
+const SERVER_VERSION = "0.3.0";
 const SUPPORTED_PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 let initialized = false;
 

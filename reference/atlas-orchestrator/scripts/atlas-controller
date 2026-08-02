@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+server_name="${ATLAS_MCP_SERVER_NAME:-atlas-orchestrator}"
+
+usage() {
+  cat <<'EOF'
+Atlas Controller
+
+Usage:
+  bash scripts/atlas-controller install [all|codex|claude] [--force]
+  bash scripts/atlas-controller status
+  bash scripts/atlas-controller doctor <repository-path>
+  bash scripts/atlas-controller codex [codex-options...]
+  bash scripts/atlas-controller claude [claude-options...]
+
+Codex launches in a read-only sandbox and defaults to Claude as the executor.
+Claude launches in Plan mode and defaults to Codex as the executor.
+Repository-changing work must flow through the Atlas Orchestrator MCP tools.
+EOF
+}
+
+command="${1:-}"
+if [ -z "$command" ]; then
+  usage
+  exit 2
+fi
+shift
+
+case "$command" in
+  install)
+    exec bash "$root/scripts/install-controllers.sh" "$@"
+    ;;
+  status)
+    echo "Atlas MCP server: $server_name"
+    echo
+    if command -v codex >/dev/null 2>&1; then
+      echo "Codex configuration:"
+      codex mcp get "$server_name" --json || true
+    else
+      echo "Codex CLI is not installed."
+    fi
+    echo
+    if command -v claude >/dev/null 2>&1; then
+      echo "Claude configuration:"
+      claude mcp get "$server_name" || true
+    else
+      echo "Claude Code is not installed."
+    fi
+    ;;
+  doctor)
+    repo="${1:-}"
+    if [ -z "$repo" ]; then
+      echo "doctor requires a repository path" >&2
+      exit 2
+    fi
+    exec node "$root/src/cli.mjs" doctor --repo "$repo"
+    ;;
+  codex)
+    if ! command -v codex >/dev/null 2>&1; then
+      echo "Codex CLI is not installed or is not on PATH." >&2
+      exit 1
+    fi
+    if ! codex mcp get "$server_name" >/dev/null 2>&1; then
+      bash "$root/scripts/install-controllers.sh" codex
+    fi
+    cd "$root/controllers/codex"
+    exec codex --sandbox read-only "$@"
+    ;;
+  claude)
+    if ! command -v claude >/dev/null 2>&1; then
+      echo "Claude Code is not installed or is not on PATH." >&2
+      exit 1
+    fi
+    if ! claude mcp get "$server_name" >/dev/null 2>&1; then
+      bash "$root/scripts/install-controllers.sh" claude
+    fi
+    cd "$root/controllers/claude"
+    exec claude --permission-mode plan "$@"
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $command" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

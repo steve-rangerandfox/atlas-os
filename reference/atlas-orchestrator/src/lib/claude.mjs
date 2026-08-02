@@ -1,4 +1,5 @@
 import { getConfig } from "./config.mjs";
+import { assertExecutorDoesNotMatchController } from "./controller.mjs";
 import { OrchestratorError } from "./errors.mjs";
 import { runProcess } from "./process.mjs";
 import { redactObject, redactText } from "./redact.mjs";
@@ -131,6 +132,7 @@ function parseJsonOutput(stdout) {
 }
 
 export async function runClaudeTask({ mission, task }) {
+  assertExecutorDoesNotMatchController("claude");
   const config = getConfig();
   const args = [
     "-p",
