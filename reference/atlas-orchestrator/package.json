@@ -12,7 +12,11 @@
     "mcp": "node src/mcp-server.mjs",
     "cli": "node src/cli.mjs",
     "test": "node --test test/*.test.mjs",
-    "smoke": "node scripts/smoke-test.mjs"
+    "smoke": "node scripts/smoke-test.mjs",
+    "controller:install": "bash scripts/install-controllers.sh all",
+    "controller:status": "bash scripts/atlas-controller status",
+    "controller:codex": "bash scripts/atlas-controller codex",
+    "controller:claude": "bash scripts/atlas-controller claude"
   },
   "bin": {
     "atlas-orchestrator": "src/cli.mjs",
