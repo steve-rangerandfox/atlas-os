@@ -1,6 +1,6 @@
 {
   "name": "atlas-orchestrator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Human-supervised multi-project MCP orchestrator with Claude Code and Codex executors.",
   "type": "module",
   "private": true,
