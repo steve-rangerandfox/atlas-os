@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { getConfig } from "./config.mjs";
+import { assertExecutorDoesNotMatchController } from "./controller.mjs";
 import { buildExecutorPrompt } from "./claude.mjs";
 import { OrchestratorError } from "./errors.mjs";
 import { runProcess } from "./process.mjs";
@@ -35,6 +36,7 @@ const REPORT_SCHEMA = {
 };
 
 export async function runCodexTask({ mission, task }) {
+  assertExecutorDoesNotMatchController("codex");
   const config = getConfig();
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "atlas-codex-"));
   const schemaPath = path.join(tempDir, "report-schema.json");
