@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+server="$root/src/mcp-server.mjs"
+server_name="${ATLAS_MCP_SERVER_NAME:-atlas-orchestrator}"
+target="all"
+force=0
+
+usage() {
+  cat <<'EOF'
+Usage: bash scripts/install-controllers.sh [all|codex|claude] [--force]
+
+Registers the local Atlas Orchestrator stdio MCP server with Codex CLI,
+Claude Code, or both. Existing entries are left unchanged unless --force is used.
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    all|codex|claude) target="$arg" ;;
+    --force) force=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $arg" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js is required." >&2
+  exit 1
+fi
+
+if [ ! -f "$server" ]; then
+  echo "Atlas MCP server not found at $server" >&2
+  exit 1
+fi
+
+install_codex() {
+  if ! command -v codex >/dev/null 2>&1; then
+    echo "Codex CLI is not installed or is not on PATH." >&2
+    return 1
+  fi
+
+  if codex mcp get "$server_name" >/dev/null 2>&1; then
+    if [ "$force" -eq 0 ]; then
+      echo "Codex already has MCP server '$server_name'; leaving it unchanged."
+      return 0
+    fi
+    codex mcp remove "$server_name" >/dev/null
+  fi
+
+  codex mcp add \
+    --env ORCH_CONTROLLER_PROVIDER=codex \
+    "$server_name" \
+    -- node "$server"
+
+  echo "Codex controller installed:"
+  codex mcp get "$server_name" --json
+}
+
+install_claude() {
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "Claude Code is not installed or is not on PATH." >&2
+    return 1
+  fi
+
+  if claude mcp get "$server_name" >/dev/null 2>&1; then
+    if [ "$force" -eq 0 ]; then
+      echo "Claude Code already has MCP server '$server_name'; leaving it unchanged."
+      return 0
+    fi
+    claude mcp remove "$server_name" >/dev/null
+  fi
+
+  claude mcp add \
+    --transport stdio \
+    --scope user \
+    --env ORCH_CONTROLLER_PROVIDER=claude \
+    "$server_name" \
+    -- node "$server"
+
+  echo "Claude controller installed:"
+  claude mcp get "$server_name"
+}
+
+case "$target" in
+  all)
+    install_codex
+    install_claude
+    ;;
+  codex) install_codex ;;
+  claude) install_claude ;;
+esac
+
+cd "$root"
+npm run smoke
+
+echo
+echo "Controller registration complete."
+echo "Launch Codex:  bash scripts/atlas-controller codex"
+echo "Launch Claude: bash scripts/atlas-controller claude"
