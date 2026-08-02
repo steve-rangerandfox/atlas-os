@@ -13,7 +13,7 @@ One orchestrator installation can serve Kit, Relay, Demo Pro, and other projects
 
 ## Status
 
-Version `0.2.0` is a local-first reference implementation. It is useful for isolated development environments and supervised experimentation. It is not a hardened security sandbox, a durable distributed workflow engine, or a production deployment service.
+Version `0.3.0` is a local-first reference implementation. It is useful for isolated development environments and supervised experimentation. It is not a hardened security sandbox, a durable distributed workflow engine, or a production deployment service.
 
 This package lives under `reference/` because the Atlas OS specification remains implementation-independent and authoritative within `spec/`.
 
