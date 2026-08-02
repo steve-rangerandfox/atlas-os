@@ -50,8 +50,8 @@ install_codex() {
   fi
 
   codex mcp add \
-    --env ORCH_CONTROLLER_PROVIDER=codex \
     "$server_name" \
+    --env ORCH_CONTROLLER_PROVIDER=codex \
     -- node "$server"
 
   echo "Codex controller installed:"
@@ -73,10 +73,9 @@ install_claude() {
   fi
 
   claude mcp add \
-    --transport stdio \
+    "$server_name" \
     --scope user \
     --env ORCH_CONTROLLER_PROVIDER=claude \
-    "$server_name" \
     -- node "$server"
 
   echo "Claude controller installed:"
