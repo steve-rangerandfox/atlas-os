@@ -4,7 +4,7 @@ A non-normative reference implementation for coordinating bounded software-engin
 
 Atlas Orchestrator keeps the controller, executor, repository evidence, and human approval boundaries separate:
 
-- **ChatGPT** acts as the controller and engineering director.
+- **ChatGPT, Codex, Claude Code, or a future Atlas Control UI** can act as the controller and engineering director.
 - **Claude Code or OpenAI Codex** performs one bounded implementation task at a time.
 - **Git** provides branch, diff, and HEAD evidence.
 - **The human** approves product decisions, sensitive access, publication, destructive actions, and final acceptance.
@@ -16,6 +16,22 @@ One orchestrator installation can serve Kit, Relay, Demo Pro, and other projects
 Version `0.2.0` is a local-first reference implementation. It is useful for isolated development environments and supervised experimentation. It is not a hardened security sandbox, a durable distributed workflow engine, or a production deployment service.
 
 This package lives under `reference/` because the Atlas OS specification remains implementation-independent and authoritative within `spec/`.
+
+## Use it now without the ChatGPT tunnel
+
+Codex CLI and Claude Code can launch local stdio MCP servers directly. Atlas includes controller profiles for both, so the complete controller → Atlas → executor loop can run inside the Codespace while ChatGPT Secure MCP Tunnel provisioning is pending.
+
+```bash
+cd /workspaces/atlas-os/atlas-os/reference/atlas-orchestrator
+bash scripts/install-controllers.sh all
+bash scripts/atlas-controller codex
+```
+
+A Codex controller launches read-only and defaults to Claude Code as the implementation executor. A Claude controller launches in Plan mode and defaults to Codex. Same-provider recursion is rejected by default.
+
+See [Controller Bootstrap](CONTROLLERS.md) for installation, launch, safety, and first-mission instructions.
+
+ChatGPT custom MCP apps still require a remote MCP endpoint or Secure MCP Tunnel when the server is local or runs on a private development machine.
 
 ## Supported executors
 
@@ -72,7 +88,7 @@ Run a readiness check against a project repository:
 node src/cli.mjs doctor --repo /workspaces/YOUR_REPOSITORY
 ```
 
-Then follow [START_HERE.md](START_HERE.md) to connect the stdio MCP server to ChatGPT.
+For ChatGPT, follow [START_HERE.md](START_HERE.md) to connect the stdio MCP server through Secure MCP Tunnel. For an immediate local controller, follow [CONTROLLERS.md](CONTROLLERS.md).
 
 ## Local CLI
 
@@ -113,18 +129,19 @@ A lookup index is stored under:
 ~/.atlas-orchestrator/index.json
 ```
 
-The repository-local state directory is added to `.git/info/exclude`. If ChatGPT or the MCP tunnel disconnects, reconnect and use `list_missions`. If the machine stops during a job, inspect the repository and job state before re-delegating.
+The repository-local state directory is added to `.git/info/exclude`. If a controller or MCP connection disconnects, reconnect and use `list_missions`. If the machine stops during a job, inspect the repository and job state before re-delegating.
 
 ## Safety boundary
 
-The orchestrator uses layered controls: bounded tools, request scanning, executor-specific settings, branch/HEAD invariants, sensitive-path detection, output redaction, named checks, and human gates. These controls reduce accidental autonomy; they do not guarantee containment against a malicious repository, a compromised executable, an unknown secret location, or a future CLI behavior change.
+The orchestrator uses layered controls: bounded tools, request scanning, executor-specific settings, controller/executor collision prevention, branch/HEAD invariants, sensitive-path detection, output redaction, named checks, and human gates. These controls reduce accidental autonomy; they do not guarantee containment against a malicious repository, a compromised executable, an unknown secret location, or a future CLI behavior change.
 
 Use a disposable Codespace or development VM with least-privilege credentials. Read [SECURITY.md](SECURITY.md) before connecting valuable repositories.
 
 ## Further documentation
 
+- [Controller Bootstrap](CONTROLLERS.md)
 - [Start Here](START_HERE.md)
-- [Controller Instructions](AGENT_INSTRUCTIONS.md)
+- [ChatGPT Controller Instructions](AGENT_INSTRUCTIONS.md)
 - [Executor Model](EXECUTORS.md)
 - [Security and Trust Model](SECURITY.md)
 - [Atlas Integration Boundary](ATLAS_INTEGRATION.md)
