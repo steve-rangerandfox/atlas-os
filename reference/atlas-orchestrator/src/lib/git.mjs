@@ -66,6 +66,29 @@ export async function createBranch(repoRoot, branchName) {
   }
 }
 
+export async function isAncestor(repoRoot, ancestorCommit, descendantCommit) {
+  const result = await git(repoRoot, ["merge-base", "--is-ancestor", ancestorCommit, descendantCommit], {
+    rejectOnNonZero: false,
+    maxOutputChars: 20_000
+  });
+  return result.code === 0;
+}
+
+export async function getRangeDiff(repoRoot, baseCommit, headCommit = "HEAD", filePath = undefined, maxOutputChars = 80_000) {
+  const args = ["diff", "--no-ext-diff", "--no-color", `${baseCommit}..${headCommit}`];
+  if (filePath) args.push("--", filePath);
+  const result = await git(repoRoot, args, { rejectOnNonZero: false, maxOutputChars });
+  return result.stdout;
+}
+
+export async function getRangeDiffStat(repoRoot, baseCommit, headCommit = "HEAD") {
+  const result = await git(repoRoot, ["diff", "--stat", "--no-color", `${baseCommit}..${headCommit}`], {
+    rejectOnNonZero: false,
+    maxOutputChars: 40_000
+  });
+  return result.stdout.trim();
+}
+
 export async function getChangedFiles(repoRoot) {
   const result = await git(repoRoot, ["status", "--porcelain=v1", "--untracked-files=normal"]);
   return result.stdout
