@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import readline from "node:readline";
 import { asErrorDetails } from "./lib/errors.mjs";
+import { projectToolDefinitions, projectToolHandlers } from "./lib/project-tools.mjs";
 import { redactObject } from "./lib/redact.mjs";
 import { callTool, toolDefinitions } from "./lib/tools.mjs";
 
 const SERVER_NAME = "atlas-orchestrator";
-const SERVER_VERSION = "0.3.0";
+const SERVER_VERSION = "0.4.0";
 const SUPPORTED_PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+const allToolDefinitions = [...projectToolDefinitions, ...toolDefinitions];
 let initialized = false;
 
 function send(message) {
@@ -25,6 +27,12 @@ function selectProtocol(requested) {
   return SUPPORTED_PROTOCOLS.includes(requested) ? requested : SUPPORTED_PROTOCOLS[0];
 }
 
+async function invokeTool(name, args) {
+  const projectHandler = projectToolHandlers[name];
+  if (projectHandler) return await projectHandler(args ?? {});
+  return await callTool(name, args ?? {});
+}
+
 async function handleRequest(message) {
   const { id, method, params = {} } = message;
   try {
@@ -34,7 +42,7 @@ async function handleRequest(message) {
         protocolVersion: selectProtocol(params.protocolVersion),
         capabilities: { tools: { listChanged: false }, logging: {} },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        instructions: "Use this server as a human-supervised coding controller. Start with doctor, require a clean Git tree, delegate only small testable tasks, inspect job results and diffs, stop at human gates, and never ask it to commit, push, deploy, publish, access secrets, or perform destructive actions."
+        instructions: "Use this server as a human-supervised Atlas controller. Adopt project handoffs and approved missions without creating branches, record decisions and blockers durably, attach only an exact existing clean branch before executor work, inspect evidence and diffs, stop at human gates, and never ask it to commit, push, deploy, publish, access secrets, or perform destructive actions."
       });
       return;
     }
@@ -50,7 +58,7 @@ async function handleRequest(message) {
     }
 
     if (method === "tools/list") {
-      result(id, { tools: toolDefinitions });
+      result(id, { tools: allToolDefinitions });
       return;
     }
 
@@ -61,7 +69,7 @@ async function handleRequest(message) {
         return;
       }
       try {
-        const data = redactObject(await callTool(name, params.arguments || {}));
+        const data = redactObject(await invokeTool(name, params.arguments || {}));
         const structuredContent = data && typeof data === "object" && !Array.isArray(data)
           ? data
           : { items: data };
