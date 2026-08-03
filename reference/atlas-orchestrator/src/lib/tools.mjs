@@ -325,7 +325,7 @@ async function ensureMissionCertified(mission) {
   if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs) {
     throw new OrchestratorError(`Project readiness certification ${profile} is stale`, "PROJECT_CERTIFICATION_STALE", { projectId: project.id, profile, checkedAt: certification.checkedAt });
   }
-  if (certification.git?.commit !== mission.baseCommit || certification.git?.branch !== mission.branch || certification.git?.clean !== true) {
+  if (certification.git?.commit !== mission.baseCommit || certification.git?.branch !== mission.branch) {
     throw new OrchestratorError("Project readiness certification does not match the mission branch and base commit", "PROJECT_CERTIFICATION_MISMATCH", {
       certifiedGit: certification.git,
       missionGit: { branch: mission.branch, commit: mission.baseCommit }

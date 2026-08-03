@@ -12,6 +12,7 @@ Version: 0.5.0 — Certified Autonomous Worker
 - Profile-allowlisted HTTPS reachability, repository-local writable cache, lockfile restore capability, Playwright/browser, Git, upstream, and artifact-writing checks.
 - Persisted certification evidence without changing existing project, mission, handoff, or branch identity.
 - Fresh-certification enforcement for project-linked executor and verification jobs, bound to the exact mission branch and base commit.
+- Relay certification compatibility with the intentional uncommitted working diff used by Atlas missions; custom profiles can still require a clean tree.
 - Deny-by-default standing authorization for five fixed local operations: runtime/cache setup, lockfile restore, network checks, artifact generation, and worker recovery.
 - No arbitrary command input and no authorization path for secrets, production writes, publication, deployment, or external communication.
 - Fixed immutable/frozen dependency restore commands with lifecycle scripts disabled by default.

@@ -6,7 +6,7 @@ Atlas 0.5 makes environment readiness durable and project-specific. Certificatio
 
 Profiles are stored on the adopted project record under `readinessProfiles`. Relay adoption seeds three editable templates:
 
-- `relay-development`: exact runtimes, executor authentication and provider policy, registry reachability, cache, lockfile, Git, and artifact checks;
+- `relay-development`: exact runtimes, executor authentication and provider policy, registry reachability, cache, lockfile, Git branch/HEAD, and artifact checks;
 - `relay-validation`: development requirements plus Playwright and a browser runtime;
 - `relay-release`: validation requirements plus a configured Git upstream.
 
@@ -24,7 +24,7 @@ A preflight verifies:
 8. clean/named Git state and an upstream for release profiles;
 9. ability to write certification artifacts.
 
-The report is stored under `project.certifications[profile]` and `project.lastCertification`. For an adopted project, executor and verification jobs require a passing, unexpired certification tied to the mission's exact branch and base commit. Profiles default to a 60-minute validity window and may set `validForMinutes` from 1 to 1,440. Existing 0.4 project and mission JSON remains readable; missing 0.5 fields are initialized when a project is re-adopted or configured.
+The report is stored under `project.certifications[profile]` and `project.lastCertification`. For an adopted project, executor and verification jobs require a passing, unexpired certification tied to the mission's exact branch and base commit. Relay templates allow the existing working diff because Atlas executors intentionally leave changes uncommitted; branch and HEAD invariants remain mandatory. Custom profiles may still require a clean tree. Profiles default to a 60-minute validity window and may set `validForMinutes` from 1 to 1,440. Existing 0.4 project and mission JSON remains readable; missing 0.5 fields are initialized when a project is re-adopted or configured.
 
 ## Standing authorization
 

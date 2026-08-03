@@ -108,6 +108,13 @@ test("project readiness profiles certify exact runtimes and enforce standing aut
       rejectOnNonZero: true
     });
     assert.equal(JSON.parse(cli.stdout).certified, true);
+
+    await writeFile(path.join(fx.repo, "mission-change.txt"), "intentional uncommitted mission work\n");
+    const dirtyProfile = { ...profile(), name: "relay-dirty", git: { clean: false, namedBranch: true } };
+    await certificationToolHandlers.set_readiness_profile({ project_id: adopted.project_id, profile: dirtyProfile });
+    const dirtyReport = await certificationToolHandlers.preflight({ project_id: adopted.project_id, profile: "relay-dirty" });
+    assert.equal(dirtyReport.certified, true, JSON.stringify(dirtyReport, null, 2));
+    assert.equal(dirtyReport.git.clean, false);
   } finally {
     old.home === undefined ? delete process.env.ORCH_HOME : process.env.ORCH_HOME = old.home;
     process.env.PATH = old.path;

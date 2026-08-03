@@ -32,7 +32,7 @@ export function relayReadinessProfiles(nodeVersion = process.version.replace(/^v
     cachePaths: [".orchestrator/cache/npm"],
     dependencyRestore: { required: true, ignoreLifecycleScripts: true },
     browser: { playwright: false, browserBinary: false },
-    git: { clean: true, namedBranch: true },
+    git: { clean: false, namedBranch: true },
     artifactDirectory: ".orchestrator/artifacts",
     validForMinutes: 60
   };
