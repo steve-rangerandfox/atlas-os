@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { projectToolHandlers } from "../src/lib/project-tools.mjs";
 import { runProcess } from "../src/lib/process.mjs";
+import { callTool } from "../src/lib/tools.mjs";
 
 async function git(cwd, ...args) {
   return (await runProcess("git", args, { cwd, rejectOnNonZero: true })).stdout.trim();
@@ -69,6 +70,17 @@ test("project handoff and approved mission are adopted without creating a branch
     assert.equal(mission.mode, "governance");
     assert.equal(mission.status, "governance");
     assert.equal(await git(repo, "branch", "--show-current"), "main");
+
+    await assert.rejects(
+      callTool("delegate_task", {
+        mission_id: mission.mission_id,
+        title: "Must not run yet",
+        objective: "Create a file before branch attachment.",
+        acceptance_criteria: ["A file exists"],
+        checks: ["diff-check"]
+      }),
+      (error) => error.code === "MISSION_NOT_ACTIVE"
+    );
 
     const project = await projectToolHandlers.get_project({ project_id: adopted.project_id });
     assert.equal(project.decisions.length, 1);
