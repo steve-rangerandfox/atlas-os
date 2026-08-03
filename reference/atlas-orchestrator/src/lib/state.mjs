@@ -8,6 +8,10 @@ function stateRoot(repoRoot) {
   return path.join(repoRoot, ".orchestrator");
 }
 
+function projectPath(repoRoot, projectId) {
+  return path.join(stateRoot(repoRoot), "projects", `${projectId}.json`);
+}
+
 function missionPath(repoRoot, missionId) {
   return path.join(stateRoot(repoRoot), "missions", `${missionId}.json`);
 }
@@ -18,6 +22,15 @@ function jobPath(repoRoot, jobId) {
 
 function indexPath() {
   return path.join(getConfig().home, "index.json");
+}
+
+function normalizeIndex(value = {}) {
+  return {
+    version: 2,
+    projects: value.projects || {},
+    missions: value.missions || {},
+    jobs: value.jobs || {}
+  };
 }
 
 async function acquireLock(targetPath, timeoutMs = 8_000) {
@@ -60,11 +73,74 @@ async function updateJsonLocked(filePath, fallback, updater) {
 }
 
 async function readIndex() {
-  return await readJson(indexPath(), { version: 1, missions: {}, jobs: {} });
+  return normalizeIndex(await readJson(indexPath(), normalizeIndex()));
 }
 
 async function updateIndex(updater) {
-  return await updateJsonLocked(indexPath(), { version: 1, missions: {}, jobs: {} }, updater);
+  return await updateJsonLocked(indexPath(), normalizeIndex(), async (current) => {
+    const next = await updater(normalizeIndex(current));
+    return normalizeIndex(next);
+  });
+}
+
+export async function registerProject(project) {
+  await mkdir(path.dirname(projectPath(project.repoRoot, project.id)), { recursive: true });
+  await writeJsonAtomic(projectPath(project.repoRoot, project.id), project);
+  await updateIndex((index) => {
+    index.projects[project.id] = {
+      repoRoot: project.repoRoot,
+      workDir: project.workDir,
+      createdAt: project.createdAt,
+      name: project.name
+    };
+    return index;
+  });
+  return project;
+}
+
+export async function locateProject(projectId) {
+  const index = await readIndex();
+  const record = index.projects[projectId];
+  if (!record) throw new OrchestratorError(`Unknown project: ${projectId}`, "PROJECT_NOT_FOUND");
+  return record;
+}
+
+export async function loadProject(projectId) {
+  const { repoRoot } = await locateProject(projectId);
+  const project = await readJson(projectPath(repoRoot, projectId), null);
+  if (!project) throw new OrchestratorError(`Project state is missing: ${projectId}`, "PROJECT_NOT_FOUND");
+  return project;
+}
+
+export async function updateProject(projectId, updater) {
+  const { repoRoot } = await locateProject(projectId);
+  return await updateJsonLocked(projectPath(repoRoot, projectId), null, async (project) => {
+    if (!project) throw new OrchestratorError(`Project state is missing: ${projectId}`, "PROJECT_NOT_FOUND");
+    const updated = await updater(project);
+    updated.updatedAt = nowIso();
+    return updated;
+  });
+}
+
+export async function listProjects(repoPath = undefined) {
+  const index = await readIndex();
+  const entries = Object.entries(index.projects);
+  const filtered = repoPath
+    ? entries.filter(([, record]) => path.resolve(record.repoRoot) === path.resolve(repoPath) || path.resolve(record.workDir) === path.resolve(repoPath))
+    : entries;
+  const projects = [];
+  for (const [id, record] of filtered) {
+    try {
+      const project = await readJson(projectPath(record.repoRoot, id), null);
+      if (project) projects.push(project);
+    } catch {}
+  }
+  return projects.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
+export async function findProjectByRepo(repoPath) {
+  const projects = await listProjects(repoPath);
+  return projects[0] || null;
 }
 
 export async function registerMission(mission) {
@@ -75,7 +151,8 @@ export async function registerMission(mission) {
       repoRoot: mission.repoRoot,
       workDir: mission.workDir,
       createdAt: mission.createdAt,
-      goal: mission.goal
+      goal: mission.goal,
+      projectId: mission.projectId || null
     };
     return index;
   });

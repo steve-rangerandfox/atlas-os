@@ -24,11 +24,24 @@ test("MCP server initializes and lists tools", async (t) => {
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } })}\n`);
   const init = await next();
   assert.equal(init.result.serverInfo.name, "atlas-orchestrator");
+  assert.equal(init.result.serverInfo.version, "0.4.0");
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
   const tools = await next();
-  assert.ok(tools.result.tools.some((tool) => tool.name === "delegate_task"));
-  assert.ok(tools.result.tools.some((tool) => tool.name === "delegate_to_claude"));
-  assert.ok(tools.result.tools.some((tool) => tool.name === "delegate_to_codex"));
-  assert.ok(tools.result.tools.some((tool) => tool.name === "finish_mission"));
+  const names = new Set(tools.result.tools.map((tool) => tool.name));
+  for (const required of [
+    "adopt_project",
+    "get_project",
+    "record_project_event",
+    "adopt_mission",
+    "attach_existing_branch",
+    "get_branch_diff",
+    "delegate_task",
+    "delegate_to_claude",
+    "delegate_to_codex",
+    "finish_mission"
+  ]) {
+    assert.ok(names.has(required), `missing ${required}`);
+  }
+  assert.ok(tools.result.tools.length >= 21);
 });

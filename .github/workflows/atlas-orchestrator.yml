@@ -29,8 +29,11 @@ jobs:
       - run: npm test
       - run: npm run smoke
       - run: node --check src/mcp-server.mjs
+      - run: node --check src/cli.mjs
       - run: node --check src/worker.mjs
       - run: node --check src/lib/tools.mjs
+      - run: node --check src/lib/project-tools.mjs
+      - run: node --check src/lib/state.mjs
       - run: node --check src/lib/git.mjs
       - run: node --check src/lib/controller.mjs
       - run: bash -n scripts/install-local.sh
