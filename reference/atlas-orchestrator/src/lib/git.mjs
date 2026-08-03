@@ -1,4 +1,4 @@
-import { appendFile, lstat, mkdir, readFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { OrchestratorError } from "./errors.mjs";
 import { runProcess } from "./process.mjs";
@@ -13,9 +13,9 @@ async function git(cwd, args, options = {}) {
 }
 
 export async function resolveRepository(inputPath) {
-  const workDir = path.resolve(inputPath || process.cwd());
+  const workDir = await realpath(path.resolve(inputPath || process.cwd()));
   const rootResult = await git(workDir, ["rev-parse", "--show-toplevel"]);
-  const repoRoot = path.resolve(rootResult.stdout.trim());
+  const repoRoot = await realpath(path.resolve(rootResult.stdout.trim()));
   if (workDir !== repoRoot && !workDir.startsWith(`${repoRoot}${path.sep}`)) {
     throw new OrchestratorError("Working directory is outside the Git repository", "INVALID_REPOSITORY");
   }

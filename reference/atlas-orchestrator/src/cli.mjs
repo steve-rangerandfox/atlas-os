@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { asErrorDetails } from "./lib/errors.mjs";
+import { certificationToolDefinitions, certificationToolHandlers, runProject } from "./lib/certification-tools.mjs";
 import { projectToolDefinitions, projectToolHandlers } from "./lib/project-tools.mjs";
 import { callTool, toolDefinitions } from "./lib/tools.mjs";
 
-const allToolDefinitions = [...projectToolDefinitions, ...toolDefinitions];
+const allToolDefinitions = [...projectToolDefinitions, ...certificationToolDefinitions, ...toolDefinitions];
 
 function usage() {
   console.log(`Atlas Orchestrator
@@ -11,6 +12,7 @@ function usage() {
 Usage:
   node src/cli.mjs tools
   node src/cli.mjs doctor --repo <path>
+  node src/cli.mjs run <project-id|name|repo-path> [--profile <name>]
   node src/cli.mjs projects [--repo <path>]
   node src/cli.mjs project <project_id>
   node src/cli.mjs start --repo <path> --goal <text> [--branch <name>]
@@ -40,6 +42,8 @@ function requiredOption(name) {
 async function invoke(name, args = {}) {
   const projectHandler = projectToolHandlers[name];
   if (projectHandler) return await projectHandler(args);
+  const certificationHandler = certificationToolHandlers[name];
+  if (certificationHandler) return await certificationHandler(args);
   return await callTool(name, args);
 }
 
@@ -56,6 +60,9 @@ async function main() {
       break;
     case "doctor":
       data = await invoke("doctor", { repo_path: requiredOption("--repo") });
+      break;
+    case "run":
+      data = await runProject({ project: process.argv[3], profile: option("--profile") });
       break;
     case "projects":
       data = await invoke("list_projects", { repo_path: option("--repo") });

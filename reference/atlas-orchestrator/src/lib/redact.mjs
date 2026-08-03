@@ -37,7 +37,8 @@ export function redactObject(value) {
   if (value && typeof value === "object") {
     const output = {};
     for (const [key, child] of Object.entries(value)) {
-      if (/secret|token|password|api.?key|authorization/i.test(key)) output[key] = "[REDACTED]";
+      if (["standingAuthorization", "standing_authorization"].includes(key)) output[key] = redactObject(child);
+      else if (/secret|token|password|api.?key|authorization/i.test(key)) output[key] = "[REDACTED]";
       else output[key] = redactObject(child);
     }
     return output;

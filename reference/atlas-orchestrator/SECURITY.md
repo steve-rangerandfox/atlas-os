@@ -34,6 +34,9 @@ The starter enforces these defaults:
 - redaction of common token and credential patterns from returned output;
 - automatic human gate when sensitive paths change, Git HEAD changes, the branch changes, or an executor reports a blocker;
 - no automatic commit, push, pull request, deployment, rollback, reset, or deletion.
+- project standing authorization is limited to five enumerated local operations and accepts no command strings;
+- network certification accepts only profile-declared HTTPS endpoints;
+- interrupted executor jobs stop for human inspection instead of being replayed over possible partial edits.
 
 ## Controller profiles
 
@@ -69,9 +72,9 @@ The bridge blocks common sensitive paths and redacts common secret formats, but 
 
 When using ChatGPT, protect the `CONTROL_PLANE_API_KEY` as a secret. Scope tunnel associations to the intended Platform organization and ChatGPT workspace. Remove the tunnel or revoke the key when it is no longer needed.
 
-### Codespace persistence is not durability
+### Local recovery is not distributed durability
 
-Mission JSON survives ordinary process restarts, but an active worker stops when the Codespace stops. The system does not yet use a durable queue, distributed lock, or independent supervisor.
+Project, mission, and job JSON survives ordinary process restarts. The 0.5 supervisor can reconcile a stopped worker on the same filesystem, but a stopped Codespace still stops all processes. The system does not use a hosted durable queue, distributed lock, or multi-node lease.
 
 ## Recommended operating environment
 

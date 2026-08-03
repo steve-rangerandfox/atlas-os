@@ -102,6 +102,17 @@ test("project handoff and approved mission are adopted without creating a branch
     assert.equal(attached.head_commit, branchHead);
     assert.equal(attached.original_base_commit, initialCommit);
 
+    await assert.rejects(
+      callTool("delegate_task", {
+        mission_id: mission.mission_id,
+        title: "Must certify first",
+        objective: "Create a harmless test file.",
+        acceptance_criteria: ["The test file exists"],
+        checks: ["diff-check"]
+      }),
+      (error) => error.code === "PROJECT_CERTIFICATION_REQUIRED"
+    );
+
     const diff = await projectToolHandlers.get_branch_diff({ mission_id: mission.mission_id });
     assert.match(diff.committed, /existing branch work/);
     assert.match(diff.committedStat, /implementation\.txt/);

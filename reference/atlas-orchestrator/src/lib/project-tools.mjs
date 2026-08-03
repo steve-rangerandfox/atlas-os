@@ -33,6 +33,7 @@ import {
   shortId
 } from "./utils.mjs";
 import { HUMAN_GATE_TRIGGERS } from "./safety.mjs";
+import { defaultAuthorizationPolicy, relayReadinessProfiles } from "./readiness.mjs";
 
 const STRING = { type: "string" };
 const STRING_ARRAY = { type: "array", items: { type: "string" } };
@@ -213,7 +214,10 @@ async function adoptProject(args) {
       handoffAdoptedAt: now,
       events: current.events || [],
       decisions: current.decisions || [],
-      artifacts: current.artifacts || []
+      artifacts: current.artifacts || [],
+      readinessProfiles: current.readinessProfiles || (state.name.toLowerCase() === "relay" ? relayReadinessProfiles() : {}),
+      defaultReadinessProfile: current.defaultReadinessProfile || (state.name.toLowerCase() === "relay" ? "relay-development" : null),
+      standingAuthorization: { ...defaultAuthorizationPolicy(), ...(current.standingAuthorization || {}) }
     }));
     return redactObject({ project_id: project.id, created: false, project });
   }
@@ -226,6 +230,10 @@ async function adoptProject(args) {
     events: [],
     decisions: [],
     artifacts: [],
+    readinessProfiles: state.name.toLowerCase() === "relay" ? relayReadinessProfiles() : {},
+    defaultReadinessProfile: state.name.toLowerCase() === "relay" ? "relay-development" : null,
+    standingAuthorization: defaultAuthorizationPolicy(),
+    certifications: {},
     handoffAdoptedAt: now,
     createdAt: now,
     updatedAt: now

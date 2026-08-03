@@ -39,6 +39,7 @@ The installer:
 - registers the local stdio server with `codex mcp add`;
 - registers the same server with `claude mcp add --scope user`;
 - tags each server process with its controller provider;
+- persists `ORCH_HOME` plus allowlisted non-secret executor, model, and timeout settings from `orchestrator.env` or the current environment;
 - runs the MCP smoke test;
 - leaves an existing configuration unchanged unless `--force` is supplied.
 
@@ -48,11 +49,14 @@ To replace existing entries:
 bash scripts/install-controllers.sh all --force
 ```
 
+The installer never persists API keys, tokens, tunnel credentials, or arbitrary environment variables. Set `ATLAS_ORCHESTRATOR_ENV_FILE` only when a different non-secret configuration file is required.
+
 ## Check status
 
 ```bash
 bash scripts/atlas-controller status
 bash scripts/atlas-controller doctor /workspaces/TARGET_REPOSITORY
+node src/cli.mjs run Relay --profile relay-development
 ```
 
 ## Launch a Codex controller

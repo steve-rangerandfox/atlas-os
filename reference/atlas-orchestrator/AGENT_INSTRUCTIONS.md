@@ -11,22 +11,24 @@ When the user supplies a governing project handoff:
 1. Begin with `doctor` on the exact repository path.
 2. Read the entire handoff and only the repository guidance needed to verify its load-bearing claims.
 3. Call `adopt_project` to persist the handoff identity, active mission, current Atlas role, lanes, blockers, summary, and next action.
-4. Call `adopt_mission` for an already-approved active mission. Do not call `start_mission` merely to represent existing governance state.
-5. Use `record_project_event` for user authority, Mission Control decisions, evidence, blockers, artifacts, and routing. Use `update_project_state` whenever the current role, blockers, or next action changes.
-6. Do not ask the user to restate a complete approved mission from the handoff.
-7. Keep the adopted mission in governance mode until the exact required clean branch is available.
-8. Never create a replacement branch when the handoff requires an existing branch.
-9. A human or approved procedure checks out the exact branch. Then call `attach_existing_branch` with any required head and original-base evidence.
-10. Use `get_branch_diff` for committed base-to-head review.
+4. Run `run_project` with the project's selected readiness profile. Do not delegate executor work unless all required certification checks pass.
+5. Call `adopt_mission` for an already-approved active mission. Do not call `start_mission` merely to represent existing governance state.
+6. Use `record_project_event` for user authority, Mission Control decisions, evidence, blockers, artifacts, and routing. Use `update_project_state` whenever the current role, blockers, or next action changes.
+7. Do not ask the user to restate a complete approved mission from the handoff.
+8. Keep the adopted mission in governance mode until the exact required clean branch is available.
+9. Never create a replacement branch when the handoff requires an existing branch.
+10. A human or approved procedure checks out the exact branch. Then call `attach_existing_branch` with any required head and original-base evidence.
+11. Use `get_branch_diff` for committed base-to-head review.
 
 ## New coding mission workflow
 
 When no approved mission exists:
 
 1. Call `doctor` on the exact repository path.
-2. Clarify and approve one mission outcome.
-3. Require a clean Git tree and at least one ready executor.
-4. Call `start_mission` once. Preserve its mission ID, branch, and base commit.
+2. Run the applicable readiness `preflight` when the repository is an adopted project.
+3. Clarify and approve one mission outcome.
+4. Require a clean Git tree and at least one ready executor.
+5. Call `start_mission` once. Preserve its mission ID, branch, and base commit.
 
 ## Execution loop
 

@@ -24,6 +24,10 @@ A separate OpenAI API controller would introduce a second ChatGPT state, another
 
 `src/worker.mjs` runs detached from the MCP request. This prevents a long Claude task from tying up one tunnel request. It records lifecycle state, runs Claude or checks, compares Git state before and after, and raises a human gate when invariants break.
 
+### Certification and supervisor
+
+`src/lib/readiness.mjs` evaluates durable project profiles and implements fixed native preparation operations. `src/lib/certification-tools.mjs` is the standing-authorization boundary. `src/lib/supervisor.mjs` reconciles durable pending jobs, while `src/supervisor.mjs` provides optional local polling. Recovery never blindly replays an interrupted executor.
+
 ### Claude adapter
 
 `src/lib/claude.mjs` invokes the local `claude` binary with:
@@ -70,6 +74,8 @@ queued -> running -> succeeded
                   -> needs_human
                   -> failed
 ```
+
+An orphaned `queued` job or verification job may transition back through `running`. An orphaned executor transitions to `needs_human`.
 
 ## Concurrency model
 

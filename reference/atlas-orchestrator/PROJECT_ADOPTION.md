@@ -19,6 +19,8 @@ A controller must not invent a replacement mission or branch merely because Atla
 ```text
 Adopted Project
 ├── governing handoff path + SHA-256
+├── readiness profiles + last certification evidence
+├── bounded standing authorization policy
 ├── active mission title
 ├── current Atlas role
 ├── authorized lanes
@@ -222,3 +224,5 @@ Codex and Claude Code cache the MCP tool catalog for a controller session. After
 3. rerun `bash scripts/install-controllers.sh all --force`;
 4. launch a fresh controller session;
 5. confirm the new project-adoption tools appear.
+
+Re-adopting a 0.4 project preserves its events, decisions, artifacts, mission links, and branch identity while initializing missing 0.5 readiness and authorization fields. No mission is recreated and no branch is changed.

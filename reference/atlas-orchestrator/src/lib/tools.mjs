@@ -20,6 +20,7 @@ import {
   listMissions,
   loadJob,
   loadMission,
+  loadProject,
   registerMission,
   updateMission
 } from "./state.mjs";
@@ -310,6 +311,28 @@ async function ensureNoRunningJob(mission) {
   }
 }
 
+async function ensureMissionCertified(mission) {
+  if (!mission.projectId) return;
+  const project = await loadProject(mission.projectId);
+  const profile = project.defaultReadinessProfile;
+  if (!profile) return;
+  const certification = project.certifications?.[profile];
+  const ageMs = certification?.checkedAt ? Date.now() - Date.parse(certification.checkedAt) : Number.POSITIVE_INFINITY;
+  const maxAgeMs = (certification?.validForMinutes || 60) * 60_000;
+  if (!certification?.certified || certification.profile !== profile) {
+    throw new OrchestratorError(`Project readiness profile ${profile} is not certified`, "PROJECT_CERTIFICATION_REQUIRED", { projectId: project.id, profile });
+  }
+  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs) {
+    throw new OrchestratorError(`Project readiness certification ${profile} is stale`, "PROJECT_CERTIFICATION_STALE", { projectId: project.id, profile, checkedAt: certification.checkedAt });
+  }
+  if (certification.git?.commit !== mission.baseCommit || certification.git?.branch !== mission.branch || certification.git?.clean !== true) {
+    throw new OrchestratorError("Project readiness certification does not match the mission branch and base commit", "PROJECT_CERTIFICATION_MISMATCH", {
+      certifiedGit: certification.git,
+      missionGit: { branch: mission.branch, commit: mission.baseCommit }
+    });
+  }
+}
+
 async function delegateTask(args, forcedExecutor = undefined) {
   const missionId = ensureString(args.mission_id, "mission_id", { max: 200 });
   const mission = await loadMission(missionId);
@@ -318,6 +341,7 @@ async function delegateTask(args, forcedExecutor = undefined) {
   if (mission.status !== "active") {
     throw new OrchestratorError(`Mission is ${mission.status}; resolve its gate or start a new mission before delegating`, "MISSION_NOT_ACTIVE", { pendingGate: mission.pendingGate });
   }
+  await ensureMissionCertified(mission);
   await ensureNoRunningJob(mission);
   if (mission.tasks.length >= mission.maxDelegations) {
     throw new OrchestratorError("Mission delegation cap reached; a human must review before continuing", "DELEGATION_LIMIT_REACHED");
@@ -440,6 +464,10 @@ async function runMissionChecks(args) {
   if (["aborted", "ready_for_human_review"].includes(mission.status)) {
     throw new OrchestratorError(`Mission is ${mission.status}`, "MISSION_NOT_ACTIVE");
   }
+  if ((mission.mode || "coding") !== "coding") {
+    throw new OrchestratorError("Attach the exact existing branch before running checks", "MISSION_EXECUTION_NOT_ATTACHED");
+  }
+  await ensureMissionCertified(mission);
   await ensureNoRunningJob(mission);
   const checks = normalizeChecks(args.checks);
   const job = await launchJob({ mission, kind: "checks", checks });

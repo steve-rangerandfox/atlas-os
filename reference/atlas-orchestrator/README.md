@@ -14,7 +14,7 @@ One orchestrator installation can serve Kit, Relay, Demo Pro, and other projects
 
 ## Status
 
-Version `0.4.0` is a local-first reference implementation. It adds durable project and handoff adoption to the existing guarded coding-mission loop. It is useful for isolated development environments and supervised experimentation. It is not a hardened security sandbox, a durable distributed workflow engine, or a production deployment service.
+Version `0.5.0`, **Certified Autonomous Worker**, is a local-first reference implementation. It preserves the 0.4 durable project, handoff, mission, and branch semantics while adding project readiness certification, bounded standing authorization, safe pending-job recovery, and a one-command project entry point. It is useful for isolated development environments and supervised experimentation. It is not a hardened security sandbox, a distributed workflow engine, or a production deployment service.
 
 This package lives under `reference/` because the Atlas OS specification remains implementation-independent and authoritative within `spec/`.
 
@@ -31,6 +31,20 @@ bash scripts/atlas-controller codex
 A Codex controller launches read-only and defaults to Claude Code as the implementation executor. A Claude controller launches in Plan mode and defaults to Codex. Same-provider recursion is rejected by default.
 
 See [Controller Bootstrap](CONTROLLERS.md) for installation and launch. See [Project Adoption](PROJECT_ADOPTION.md) for complete handoff-driven operation.
+
+## Certified worker flow
+
+Adopted Relay projects receive editable `relay-development`, `relay-validation`, and `relay-release` profile templates. Profiles are stored in project state and can pin exact Node.js and package-manager versions, select an executor, enforce the controller/executor policy, declare HTTPS endpoints and writable caches, require lockfile restore capability, require Playwright and a browser runtime, constrain Git state, and select an artifact directory.
+
+```bash
+node src/cli.mjs run Relay --profile relay-validation
+```
+
+`atlas run <project>` resolves the adopted project by ID, exact name, or repository path; recovers only jobs that are safe to restart; runs the selected preflight; persists the evidence; and returns the active mission and next action. It does not create a mission, edit product code, install dependencies, or publish anything.
+
+Environment preparation is separately opt-in through durable standing authorization and fixed native operations. See [Certified Autonomous Worker](CERTIFIED_WORKER.md).
+
+Project-linked executor and verification jobs require a passing, fresh certification for the mission's exact branch and base commit. Standalone 0.4-style coding missions remain compatible with the existing `doctor` flow.
 
 ChatGPT custom MCP apps still require a remote MCP endpoint or Secure MCP Tunnel when the server is local or runs on a private development machine.
 
@@ -91,6 +105,12 @@ The worker refuses to start when the mission is still in governance mode, when t
 | `adopt_project` | Adopt or refresh a governing handoff without creating a branch |
 | `get_project` | Inspect project state, Git state, and linked missions |
 | `list_projects` | Find adopted projects |
+| `set_readiness_profile` | Persist an exact project certification profile |
+| `set_standing_authorization` | Authorize named local environment operations |
+| `preflight` | Run and persist worker certification evidence |
+| `run_environment_operation` | Run one authorized bounded native operation |
+| `recover_pending_jobs` | Restart safe pending work or stop for review |
+| `run_project` | Recover and certify an adopted project in one call |
 | `update_project_state` | Update role, lanes, blockers, summary, and next action |
 | `record_project_event` | Record a decision, evidence item, blocker, artifact, routing event, or note |
 | `adopt_mission` | Represent an already-approved mission in governance mode |
@@ -159,7 +179,7 @@ A lookup index is stored under:
 ~/.atlas-orchestrator/index.json
 ```
 
-The repository-local state directory is added to `.git/info/exclude`. If a controller or MCP connection disconnects, reconnect and use `list_projects`, `get_project`, or `list_missions`. If the machine stops during a job, inspect the repository and job state before re-delegating.
+The repository-local state directory is added to `.git/info/exclude`. If a controller or MCP connection disconnects, reconnect and use `list_projects`, `get_project`, or `list_missions`. After a machine restart, `run_project`, `recover_pending_jobs`, or `node src/supervisor.mjs --once` reconciles durable pending jobs. Queued jobs and checks may restart when branch and HEAD invariants hold; an interrupted executor job stops for human review because it may have partially edited the repository.
 
 ## Safety boundary
 
@@ -170,6 +190,7 @@ Use a disposable Codespace or development VM with least-privilege credentials. R
 ## Further documentation
 
 - [Project Adoption](PROJECT_ADOPTION.md)
+- [Certified Autonomous Worker](CERTIFIED_WORKER.md)
 - [Controller Bootstrap](CONTROLLERS.md)
 - [Start Here](START_HERE.md)
 - [ChatGPT Controller Instructions](AGENT_INSTRUCTIONS.md)

@@ -11,6 +11,8 @@ Use the generic MCP tool `delegate_task` with `executor: "claude"` or `executor:
 
 The orchestrator, not the executor, owns mission state, Git branch safety, diff inspection, verification checks, secret-path blocking, and human approval gates. Neither executor is authorized to commit, push, open a pull request, deploy, publish, or mutate infrastructure.
 
+Readiness network probes are native Atlas operations restricted to HTTPS URLs declared in the selected project profile. Codex executor sandbox network remains disabled. A profile passing a registry probe does not grant an executor open-ended network access; deterministic dependency restore is a separate, standing-authorized native operation.
+
 Configuration:
 
 ```bash

@@ -38,7 +38,8 @@ async function main() {
 
   await updateJob(jobId, (current) => {
     current.status = "running";
-    current.startedAt = nowIso();
+    current.startedAt ||= nowIso();
+    current.heartbeatAt = nowIso();
     return current;
   });
   await markTask(mission.id, job.taskId, { status: "running", startedAt: nowIso() });

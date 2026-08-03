@@ -4,8 +4,41 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 server="$root/src/mcp-server.mjs"
 server_name="${ATLAS_MCP_SERVER_NAME:-atlas-orchestrator}"
+env_file="${ATLAS_ORCHESTRATOR_ENV_FILE:-$root/orchestrator.env}"
 target="all"
 force=0
+
+allowed_env=(
+  ORCH_HOME ORCH_CLAUDE_BIN ORCH_CLAUDE_MODEL ORCH_CODEX_BIN ORCH_CODEX_MODEL
+  ORCH_PERMISSION_MODE ORCH_MAX_TURNS ORCH_MAX_BUDGET_USD
+  ORCH_CLAUDE_TIMEOUT_MINUTES ORCH_CODEX_TIMEOUT_MINUTES
+  ORCH_CHECK_TIMEOUT_MINUTES ORCH_MAX_OUTPUT_CHARS ORCH_ALLOW_SAME_PROVIDER_EXECUTOR
+)
+configured_value() {
+  local requested="$1"
+  local value="${!requested:-}"
+  local line key
+  if [ -z "$value" ] && [ -f "$env_file" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      if [[ "$line" =~ ^([A-Z0-9_]+)=(.*)$ ]]; then
+        key="${BASH_REMATCH[1]}"
+        if [ "$key" = "$requested" ]; then value="${BASH_REMATCH[2]}"; fi
+      fi
+    done < "$env_file"
+  fi
+  if [ -z "$value" ] && [ "$requested" = "ORCH_HOME" ]; then value="$HOME/.atlas-orchestrator"; fi
+  configured_result="$value"
+}
+
+controller_env_args() {
+  local provider="$1"
+  mcp_env_args=(--env "ORCH_CONTROLLER_PROVIDER=$provider")
+  local key
+  for key in "${allowed_env[@]}"; do
+    configured_value "$key"
+    if [ -n "$configured_result" ]; then mcp_env_args+=(--env "$key=$configured_result"); fi
+  done
+}
 
 usage() {
   cat <<'EOF'
@@ -49,9 +82,10 @@ install_codex() {
     codex mcp remove "$server_name" >/dev/null
   fi
 
+  controller_env_args codex
   codex mcp add \
     "$server_name" \
-    --env ORCH_CONTROLLER_PROVIDER=codex \
+    "${mcp_env_args[@]}" \
     -- node "$server"
 
   echo "Codex controller installed:"
@@ -72,10 +106,12 @@ install_claude() {
     claude mcp remove "$server_name" >/dev/null
   fi
 
+  controller_env_args claude
   claude mcp add \
+    --transport stdio \
     "$server_name" \
     --scope user \
-    --env ORCH_CONTROLLER_PROVIDER=claude \
+    "${mcp_env_args[@]}" \
     -- node "$server"
 
   echo "Claude controller installed:"

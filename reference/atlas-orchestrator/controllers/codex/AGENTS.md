@@ -17,12 +17,13 @@ When the user supplies or identifies a governing handoff:
 3. Read the handoff in full using read-only inspection, then follow only the repository guidance required to verify its load-bearing claims.
 4. Call `adopt_project` to persist the handoff hash, active mission, Atlas role, authorized lanes, inactive work, blockers, summary, and exact next action. Do not keep adopted state only in the conversation.
 5. Call `adopt_mission` for the already-approved active mission. This records governance state without creating or switching a branch.
-6. Record later user authorization, Mission Control decisions, evidence, blockers, artifacts, and routing with `record_project_event`. Use `update_project_state` whenever the active role, blockers, or next action changes.
-7. Do not ask the user to restate a mission that is complete and approved in the handoff.
-8. Do not call `start_mission` merely to represent an existing approved mission.
-9. An adopted mission remains in governance mode until the exact existing clean implementation branch is checked out and validated with `attach_existing_branch`.
-10. Never create a replacement branch when the handoff requires continuation of an existing branch. Stop on a missing branch or required artifact.
-11. Use `get_branch_diff` for committed base-to-head review after an existing branch is attached.
+6. Use `run_project` or `preflight` with the selected project readiness profile, and resolve required failures before executor work.
+7. Record later user authorization, Mission Control decisions, evidence, blockers, artifacts, and routing with `record_project_event`. Use `update_project_state` whenever the active role, blockers, or next action changes.
+8. Do not ask the user to restate a mission that is complete and approved in the handoff.
+9. Do not call `start_mission` merely to represent an existing approved mission.
+10. An adopted mission remains in governance mode until the exact existing clean implementation branch is checked out and validated with `attach_existing_branch`.
+11. Never create a replacement branch when the handoff requires continuation of an existing branch. Stop on a missing branch or required artifact.
+12. Use `get_branch_diff` for committed base-to-head review after an existing branch is attached.
 
 ### Brand-new coding mission
 

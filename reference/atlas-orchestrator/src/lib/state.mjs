@@ -238,6 +238,22 @@ export async function listMissions(repoPath = undefined) {
   return missions.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
+export async function listJobs(repoPath = undefined) {
+  const index = await readIndex();
+  const entries = Object.entries(index.jobs);
+  const filtered = repoPath
+    ? entries.filter(([, record]) => path.resolve(record.repoRoot) === path.resolve(repoPath))
+    : entries;
+  const jobs = [];
+  for (const [id, record] of filtered) {
+    try {
+      const job = await readJson(jobPath(record.repoRoot, id), null);
+      if (job) jobs.push(job);
+    } catch {}
+  }
+  return jobs.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
 export async function readRawStateFile(filePath) {
   return JSON.parse(await readFile(filePath, "utf8"));
 }

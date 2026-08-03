@@ -88,7 +88,7 @@ In ChatGPT:
 5. Name the connection `Claude Code Orchestrator`.
 6. Under **Connection**, choose **Tunnel**.
 7. Select the tunnel or enter its `tunnel_id`.
-8. Create the connection and confirm that all eleven tools are discovered.
+8. Create the connection and confirm that the complete tool catalog is discovered.
 
 For the app description, use:
 
@@ -174,4 +174,4 @@ The bridge refuses to stash, discard, or mix with existing work. Commit, move, o
 
 ### A job was running when the Codespace stopped
 
-Restart the Codespace and tunnel, call `list_missions`, inspect the job and Git state, and decide whether to re-delegate the task. Do not assume a stale `running` record means the process is still alive.
+Restart the Codespace and tunnel, then call `run_project` or `recover_pending_jobs`. Atlas restarts only safe queued/check jobs. Interrupted executor work stops at a human gate so you can inspect the Git state before deciding whether to retry.

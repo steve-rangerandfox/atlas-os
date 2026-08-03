@@ -1,44 +1,53 @@
 # Build Report
 
 Build date: 2026-08-03
-Version: 0.4.0
+Version: 0.5.0 — Certified Autonomous Worker
 
 ## Delivered
 
-- Zero-dependency Node.js stdio MCP server with twenty-one purpose-built tools.
-- Durable project-level state independent of coding branches.
-- Repository-local handoff identity using path, byte count, modification time, and SHA-256.
-- Idempotent project adoption by repository.
-- Auditable project decisions, evidence, blockers, artifacts, routing events, and notes.
-- Adoption of already-approved missions in non-executable governance mode.
-- Exact existing-branch attachment without creating, switching, resetting, committing, or pushing Git state.
-- Original-base ancestry validation and committed base-to-head diff retrieval.
-- Worker refusal when an adopted mission has not attached an execution branch.
-- Multi-project coding-mission state with clean-tree enforcement and dedicated branches for brand-new missions.
-- Interchangeable Claude Code and OpenAI Codex executors.
-- Detached executor workers with structured reports and named verification checks.
-- Branch and Git HEAD invariants before and after executor work.
-- Persistent project/mission/job JSON with atomic writes and filesystem locks.
-- Secret-path blocking, output redaction, request scanning, and human approval gates.
-- Local Codex controller profile using a read-only controller sandbox.
-- Local Claude Code controller profile using Plan mode.
-- Controller instructions that distinguish read-only inspection from Atlas-only modification.
-- Controller/executor same-provider collision prevention with an explicit opt-in override.
-- GitHub Actions validation for tests, MCP smoke checks, JavaScript syntax, and shell syntax.
+- Durable project-specific readiness profiles with seeded `relay-development`, `relay-validation`, and `relay-release` templates.
+- Exact Node.js and optional package-manager version checks.
+- Claude Code/Codex executable and authentication checks.
+- Controller/executor same-provider policy certification.
+- Profile-allowlisted HTTPS reachability, repository-local writable cache, lockfile restore capability, Playwright/browser, Git, upstream, and artifact-writing checks.
+- Persisted certification evidence without changing existing project, mission, handoff, or branch identity.
+- Fresh-certification enforcement for project-linked executor and verification jobs, bound to the exact mission branch and base commit.
+- Deny-by-default standing authorization for five fixed local operations: runtime/cache setup, lockfile restore, network checks, artifact generation, and worker recovery.
+- No arbitrary command input and no authorization path for secrets, production writes, publication, deployment, or external communication.
+- Fixed immutable/frozen dependency restore commands with lifecycle scripts disabled by default.
+- Durable worker launch metadata, heartbeat, attempt count, safe pending-job reconciliation, and an optional local supervisor loop.
+- Automatic restart only for safe queued/check jobs with intact branch and HEAD invariants.
+- Human gate for interrupted executor jobs or Git invariant changes.
+- `atlas run <project>` equivalent through `node src/cli.mjs run <project> [--profile <name>]` and the `run_project` MCP tool.
+- Controller installation that persists required allowlisted non-secret `ORCH_*` variables for both Codex and Claude registrations.
+- Compatibility fix for canonicalizing macOS `/tmp` repository paths with `realpath`.
+- Updated controller, executor, security, adoption, architecture, and operating documentation.
+
+## Compatibility and migration
+
+- The global index remains schema version 2.
+- Existing repository-local project, mission, and job JSON remains readable.
+- Re-adopting a 0.4 project preserves events, decisions, artifacts, mission links, branch attachment, and job history while initializing missing 0.5 project fields.
+- Old jobs without launch metadata are treated as attempt zero and reconciled conservatively.
+- Existing coding missions and governance-mode missions retain their previous state transitions.
+- Controller sessions must be restarted after reinstalling the MCP entries so the 0.5 tool catalog and persisted environment are loaded.
 
 ## Verification contract
 
-The release is validated with:
-
 ```text
 npm test
+  16 tests passing
 
 npm run smoke
   MCP initialization
-  21 tools discovered
+  27 tools discovered
 
 node --check src/mcp-server.mjs
 node --check src/worker.mjs
+node --check src/supervisor.mjs
+node --check src/lib/certification-tools.mjs
+node --check src/lib/readiness.mjs
+node --check src/lib/supervisor.mjs
 node --check src/lib/tools.mjs
 node --check src/lib/project-tools.mjs
 node --check src/lib/state.mjs
@@ -49,39 +58,15 @@ bash -n scripts/install-controllers.sh
 bash -n scripts/atlas-controller
 ```
 
-The automated tests use temporary Git repositories and fake Claude/Codex executables. In addition to the 0.3 coding loop, they verify:
+The automated suite covers exact profile certification, default-denied authorization, authorized artifact and dependency operations, the one-command CLI, interrupted-executor recovery, persisted controller MCP environment, both executor adapters, mission branch/HEAD guards, failed checks, MCP discovery, handoff adoption, branch attachment, diff safety, redaction, and task request blocking.
 
-- a governing handoff can be adopted without changing the current branch;
-- repeated adoption refreshes one project record rather than creating duplicates;
-- project-level decisions persist before an execution branch exists;
-- an approved mission can be represented in governance mode;
-- governance mode cannot execute workers or checks;
-- an exact existing branch can be attached only when clean and already checked out;
-- an expected branch head is enforced;
-- an original base must be an ancestor of the attached head;
-- committed base-to-head evidence can be inspected without publication.
+## Remaining local-first limits
 
-## Live integration status
-
-The Relay controller exercise proved that Atlas 0.3 could audit a handoff and route roles safely, but exposed a state-model gap: project adoption and Mission Control decisions existed only in the controller conversation because the only persistent primitive was a branch-creating coding mission.
-
-Version 0.4 closes that gap. The next live validation is:
-
-1. restart the local controller against 0.4;
-2. adopt the Relay handoff with `adopt_project`;
-3. adopt the approved External Write Authorization Boundary mission with `adopt_mission`;
-4. record the superseding Work Package A target decision with `record_project_event`;
-5. verify the project can resume after a controller restart;
-6. keep Work Package E in governance mode until its exact existing branch or review artifact is recovered.
-
-## Known MVP limits
-
-- A stopped Codespace stops active workers and local controller sessions.
-- A job may remain recorded as `running` after a hard machine stop; inspect Git state before re-delegating.
-- Project events are an append-only local audit aid, not a cryptographically signed governance ledger.
-- Controller modes and MCP configuration reduce accidental direct edits but are not a hardened isolation boundary.
-- Secret detection and command blocking are pattern based.
-- Package scripts are repository-controlled executable code.
-- Existing-branch attachment requires that another approved local procedure has already checked out the branch.
-- Atlas does not recover an unavailable local branch or fabricate a replacement implementation.
-- There is no hosted approval dashboard, durable queue, isolated worktree pool, GitHub App, or automated pull-request flow yet.
+- Runtime setup validates the pinned runtime already provisioned by the worker image; it does not download or compile Node.js.
+- Browser availability is certified, but browser installation remains an image/bootstrap responsibility.
+- HTTPS probes prove current reachability only. Codex executor sandbox networking remains disabled; network certification does not grant open-ended executor access.
+- Dependency restore runs repository-controlled package-manager behavior with scripts disabled by default. Package manager defects and lockfile contents remain outside Atlas's security boundary.
+- Worker recovery depends on one filesystem and local process IDs. It is not a hosted queue, distributed lease, or multi-machine failover system.
+- An interrupted executor is never auto-replayed because partial edits cannot be proven idempotent.
+- Project events and certifications are local audit records, not cryptographically signed attestations.
+- There is still no hosted approval dashboard, isolated worktree pool, automatic pull request, merge, deployment, or release flow.
