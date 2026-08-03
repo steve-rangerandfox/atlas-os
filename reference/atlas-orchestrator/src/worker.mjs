@@ -47,6 +47,14 @@ async function main() {
   let checkResult = null;
 
   try {
+    if ((mission.mode || "coding") !== "coding") {
+      throw new OrchestratorError(
+        "This adopted mission is still in governance mode; attach the exact existing clean branch before executor work or checks",
+        "MISSION_EXECUTION_NOT_ATTACHED",
+        { missionMode: mission.mode || "coding" }
+      );
+    }
+
     const before = await getGitSnapshot(mission.repoRoot);
     if (before.branch !== mission.branch) {
       throw new OrchestratorError(
@@ -167,7 +175,7 @@ async function main() {
     await updateMission(mission.id, (current) => {
       current.lastJobId = jobId;
       current.lastError = details;
-      current.status = "active";
+      current.status = (current.mode || "coding") === "coding" ? "active" : "governance";
       if (job.taskId) {
         const task = current.tasks.find((entry) => entry.id === job.taskId);
         if (task) {
