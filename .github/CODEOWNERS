@@ -1,0 +1,10 @@
+*                         @steve-rangerandfox
+# ^ Catch-all. With require_code_owner_review, only the owner's review can
+# satisfy the gate. A machine account holding `pull requests: write` can open
+# and even approve a PR, but it is never a code owner, so its approval counts
+# for nothing here.
+
+# The policy guard decides what every adopted project is allowed to do. An
+# unreviewed commit here silently weakens the boundary in every project at
+# once, so it is called out explicitly rather than relying on the catch-all.
+plugin/atlas/hooks/**     @steve-rangerandfox
