@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas-os/schemas/project.schema.json",
+  "title": "Atlas project state (.atlas/project.json)",
+  "description": "Per-repository Atlas configuration. Written by a human via the adoption skill or the CLI. Agents cannot write this file — see AUTHORITY_MODEL.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name", "repository", "policy", "validation"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["remote", "defaultBranch", "visibility"],
+      "properties": {
+        "remote": { "type": "string", "description": "Canonical remote URL. Project identity is this, never a filesystem path." },
+        "defaultBranch": { "type": "string" },
+        "visibility": { "enum": ["public", "private"] }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The pin MUST come from the project (engines/.nvmrc/tool manifest), never from whatever process happens to be running.",
+      "properties": {
+        "node": { "type": "string", "description": "Semver range or exact version, e.g. '20.x'." },
+        "nodeSource": { "enum": ["package.json:engines", ".nvmrc", ".tool-versions", "explicit"] },
+        "packageManager": { "enum": ["npm", "pnpm", "yarn", "bun"] },
+        "image": { "type": "string", "description": "Digest-pinned dev image, e.g. ghcr.io/org/repo-dev@sha256:..." }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The validation ladder, in order. Each rung is a package script or command. A skipped rung is NEVER a pass.",
+      "required": ["ladder"],
+      "properties": {
+        "ladder": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "command"],
+            "properties": {
+              "name": { "type": "string" },
+              "command": { "type": "string" },
+              "tier": { "enum": ["focused", "subsystem", "integration", "full", "platform"] },
+              "required": { "type": "boolean", "default": true }
+            }
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protectedPaths": { "type": "array", "items": { "type": "string" } },
+        "secretPaths": { "type": "array", "items": { "type": "string" } },
+        "acceptanceTestPaths": { "type": "array", "items": { "type": "string" }, "default": ["tests/acceptance/**"] },
+        "enforceMissionScope": { "type": "boolean", "default": true },
+        "interruptionBudget": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "express": { "type": "integer" }, "standard": { "type": "integer" }, "guarded": { "type": "integer" } }
+        }
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "description": "The invariant registry. An invariant with no enforcement test is aspirational, not enforced.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "statement", "status"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*-[0-9]{3}$" },
+          "statement": { "type": "string" },
+          "ownerModule": { "type": "string" },
+          "enforcementTests": { "type": "array", "items": { "type": "string" } },
+          "status": { "enum": ["enforced", "asserted-only", "aspirational"] }
+        }
+      }
+    },
+    "activeMission": { "type": ["string", "null"] },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where human authority actually lives. These are external systems, deliberately.",
+      "properties": {
+        "mergeGate": { "type": "string", "description": "e.g. 'github:ruleset:main' — PR + approval + require-last-push-approval" },
+        "releaseGate": { "type": "string", "description": "e.g. 'github:environment:production' — required reviewers, prevent self-review" },
+        "acceptanceGate": { "type": "string", "description": "Who records acceptance and how, e.g. 'human:cli:atlas-accept'" }
+      }
+    }
+  }
+}

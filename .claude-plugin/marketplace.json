@@ -1,0 +1,13 @@
+{
+  "name": "atlas-os",
+  "owner": { "name": "Ranger & Fox" },
+  "metadata": { "description": "Atlas — governance for autonomous engineering", "version": "1.0.0" },
+  "plugins": [
+    {
+      "name": "atlas",
+      "source": "./plugin/atlas",
+      "description": "Role separation with real authority boundaries, deterministic policy enforcement below the model, mission contracts with independently authored acceptance criteria, and a metrics loop.",
+      "category": "workflow"
+    }
+  ]
+}

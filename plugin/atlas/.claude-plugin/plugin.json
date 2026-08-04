@@ -1,0 +1,9 @@
+{
+  "name": "atlas",
+  "version": "1.0.0",
+  "description": "Atlas — governance for autonomous engineering. Role separation with real authority boundaries, deterministic policy enforcement below the model, mission contracts with independently authored acceptance criteria, and a metrics loop.",
+  "author": { "name": "Ranger & Fox" },
+  "homepage": "https://github.com/steve-rangerandfox/atlas-os",
+  "license": "MIT",
+  "keywords": ["governance", "missions", "acceptance-criteria", "policy", "review"]
+}

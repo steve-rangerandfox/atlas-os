@@ -1,0 +1,10 @@
+# Atlas governance surfaces. These require the owner's review on every PR,
+# which is what makes them un-widenable by an agent.
+/.atlas/project.json      @{{GITHUB_OWNER}}
+/.atlas/missions/         @{{GITHUB_OWNER}}
+/tests/acceptance/        @{{GITHUB_OWNER}}
+/.github/                 @{{GITHUB_OWNER}}
+/.devcontainer/           @{{GITHUB_OWNER}}
+/package.json             @{{GITHUB_OWNER}}
+/package-lock.json        @{{GITHUB_OWNER}}
+/CONSTITUTION.md          @{{GITHUB_OWNER}}
