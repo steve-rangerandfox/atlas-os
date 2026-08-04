@@ -1,38 +1,52 @@
 # Atlas certified dev image for {{PROJECT_NAME}}.
 #
-# Based on the official Playwright image matching the RESOLVED browser version
-# from the lockfile, so browsers AND their OS libraries are already present —
-# that is the part hand-rolled setup scripts get wrong.
+# Node is the BASE, not something installed on top of another image's Node.
+# Starting from a Playwright image and apt-installing Node leaves that image's
+# own Node earlier on PATH, where it silently wins — shipping a "certified"
+# image with the wrong runtime and a dependency tree resolved under it.
+# Choose a base whose toolchain is already correct; do not repair another
+# image's toolchain.
 #
-# Dependencies are baked at build time, keyed to the lockfile hash. At steady
-# state the agent needs no package-registry network access at all.
-FROM mcr.microsoft.com/playwright:v{{PLAYWRIGHT_VERSION}}-noble
+# Browsers derive from the lockfile rather than from a hand-matched base-image
+# tag, so the browser build cannot drift from the pinned browser package — and
+# no registry tag variant needs verifying during adoption.
+FROM node:{{NODE_MAJOR}}-bookworm
 
-ARG NODE_MAJOR={{NODE_MAJOR}}
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_ENV=development \
     CI=1 \
     npm_config_fund=false \
-    npm_config_audit=false
+    npm_config_audit=false \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# Pin the Node major explicitly. The base image ships a Node, but the project's
-# declared pin is the authority — never "whatever the image happens to have".
+# Assert the runtime before anything depends on it. A `node --version` that only
+# prints is not verification — this build must FAIL on a wrong major rather than
+# ship an image that looks certified and isn't.
 RUN set -eux; \
-    curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -; \
-    apt-get install -y --no-install-recommends nodejs git jq ca-certificates; \
+    command -v -a node; \
+    test "$(node -p 'process.versions.node.split(".")[0]')" = "{{NODE_MAJOR}}" \
+      || { echo "FATAL: node $(node --version) is not major {{NODE_MAJOR}}"; exit 1; }; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends git jq ca-certificates curl; \
     rm -rf /var/lib/apt/lists/*; \
     node --version; npm --version
 
 WORKDIR /workspace
 
-# Bake dependencies. Lifecycle scripts are disabled: a postinstall is an
-# execution vector, and nothing in a dependency tree needs to run at image build.
+# Lifecycle scripts stay disabled: a postinstall is an execution vector and
+# nothing in a dependency tree needs to run while building an image.
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
-# Playwright browsers live in the base image; point the runtime at them and
-# stop any npm postinstall from re-downloading.
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# Browsers and their OS libraries, at the version the lockfile pins.
+RUN ./node_modules/.bin/playwright install --with-deps {{BROWSERS}} \
+    && ./node_modules/.bin/playwright --version
 
 COPY . .
+
+# SCOPE: these baked dependencies serve the devcontainer, where the working
+# directory IS /workspace. GitHub Actions mounts the repository at
+# /__w/<repo>/<repo>, so Node resolution never reaches /workspace and CI must
+# restore dependencies itself. The image's guarantee is the TOOLCHAIN — pinned
+# Node, pinned browsers, OS libraries. The lockfile is the guarantee for
+# dependencies. Do not claim the agent needs no registry access in CI.

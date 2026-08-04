@@ -9,6 +9,18 @@ on:
 
 permissions:
   contents: read
+  packages: read          # required to pull the certified image from GHCR
+
+defaults:
+  run:
+    # Actions picks `sh -e {0}` inside a container when it cannot resolve bash,
+    # and dash rejects `set -euo pipefail` with "Illegal option -o pipefail" —
+    # failing every step that asks for strict mode. Declare it explicitly.
+    # `shell: bash` runs `bash --noprofile --norc -eo pipefail {0}`, so pipefail
+    # is set by the invocation and any `set -euo pipefail` in a step is redundant
+    # but harmless. If a base image genuinely lacks bash this fails with
+    # "command not found" — add bash to the Dockerfile and re-pin in that case.
+    shell: bash
 
 concurrency:
   group: atlas-validate-${{ github.ref }}
@@ -21,6 +33,13 @@ jobs:
     timeout-minutes: 30
     container:
       image: {{DEV_IMAGE_DIGEST}}
+      # GHCR packages land private by default, and a job container is pulled
+      # before the job starts — without credentials the pull fails on auth,
+      # producing a dead container and a misleading cascade of step failures.
+      # Harmless if the package is public.
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
       options: --user root
     steps:
       - uses: actions/checkout@v4
@@ -28,17 +47,21 @@ jobs:
       - name: Toolchain matches the project pin
         run: |
           set -euo pipefail
-          want="$(node -e 'const p=require("./package.json");process.stdout.write(String((p.engines&&p.engines.node)||""))')"
-          have="$(node --version)"
-          echo "declared=$want actual=$have"
+          want="$(node -p 'const p=require("./package.json");(p.engines&&p.engines.node)||""')"
           [ -n "$want" ] || { echo "::error::No Node pin declared in package.json engines"; exit 1; }
-          node -e 'const s=require("semver");' 2>/dev/null || npm i -g semver@7 --silent
-          node -e '
-            const semver=require("semver");
-            const want=process.argv[1], have=process.argv[2].replace(/^v/,"");
-            if(!semver.satisfies(have,want)){console.error(`::error::Node ${have} does not satisfy ${want}`);process.exit(1);}
-            console.log("node pin satisfied");
-          ' "$want" "$have"
+          have="$(node -p 'process.versions.node')"
+          echo "declared=$want actual=$have"
+          # Major-version comparison in shell, with no helper dependency. An
+          # earlier version installed a semver package globally and then
+          # require()d it from `node -e`, which is not resolvable without
+          # NODE_PATH — so the check failed on its own helper rather than on the
+          # toolchain it exists to verify.
+          want_major="${want%%.*}"
+          for pfx in '>=' '^' '~' 'v'; do want_major="${want_major#$pfx}"; done
+          have_major="${have%%.*}"
+          [ "$have_major" = "$want_major" ] \
+            || { echo "::error::Node $have does not satisfy $want (major $have_major != $want_major)"; exit 1; }
+          echo "node pin satisfied"
 
       - name: Manifests unchanged by the working tree
         run: |
@@ -50,14 +73,18 @@ jobs:
             exit 1
           fi
 
-      - name: Dependencies are already baked (cache hit expected)
+      - name: Restore dependencies
         run: |
           set -euo pipefail
-          if [ ! -d node_modules ]; then
-            echo "::warning::node_modules absent in the certified image; restoring. Rebuild the dev image."
-            npm ci --ignore-scripts
-          fi
-          test -x node_modules/.bin/playwright || { echo "::error::playwright binary missing"; exit 1; }
+          # Actions mounts the repo at /__w/<repo>/<repo>, not /workspace, so the
+          # image's baked node_modules is NOT on the resolution path here. This is
+          # a required step, not a soft fallback: a warning that degrades to
+          # "carried on without dependencies" is the same defect class as counting
+          # a skipped test as a pass.
+          npm ci --ignore-scripts
+          test -x node_modules/.bin/playwright \
+            || { echo "::error::playwright binary missing after npm ci"; exit 1; }
+          ./node_modules/.bin/playwright --version
 
 {{LADDER_STEPS}}
 
