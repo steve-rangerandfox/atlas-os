@@ -1,0 +1,85 @@
+name: atlas-validate
+# The evidence job. Every rung is required: a skipped rung is NEVER a pass.
+# This is the required status check referenced by the branch ruleset.
+on:
+  pull_request:
+  push:
+    branches: ["{{DEFAULT_BRANCH}}"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atlas-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  atlas-validate:
+    name: atlas-validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: {{DEV_IMAGE_DIGEST}}
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain matches the project pin
+        run: |
+          set -euo pipefail
+          want="$(node -e 'const p=require("./package.json");process.stdout.write(String((p.engines&&p.engines.node)||""))')"
+          have="$(node --version)"
+          echo "declared=$want actual=$have"
+          [ -n "$want" ] || { echo "::error::No Node pin declared in package.json engines"; exit 1; }
+          node -e 'const s=require("semver");' 2>/dev/null || npm i -g semver@7 --silent
+          node -e '
+            const semver=require("semver");
+            const want=process.argv[1], have=process.argv[2].replace(/^v/,"");
+            if(!semver.satisfies(have,want)){console.error(`::error::Node ${have} does not satisfy ${want}`);process.exit(1);}
+            console.log("node pin satisfied");
+          ' "$want" "$have"
+
+      - name: Manifests unchanged by the working tree
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if ! git diff --quiet -- package.json package-lock.json; then
+            echo "::error::package.json or package-lock.json is modified. Manifest changes are a human decision."
+            git diff --stat -- package.json package-lock.json
+            exit 1
+          fi
+
+      - name: Dependencies are already baked (cache hit expected)
+        run: |
+          set -euo pipefail
+          if [ ! -d node_modules ]; then
+            echo "::warning::node_modules absent in the certified image; restoring. Rebuild the dev image."
+            npm ci --ignore-scripts
+          fi
+          test -x node_modules/.bin/playwright || { echo "::error::playwright binary missing"; exit 1; }
+
+{{LADDER_STEPS}}
+
+      - name: Evidence record
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p .atlas/evidence
+          cat > .atlas/evidence/validation-${{ github.run_id }}.json <<JSON
+          { "runner": "atlas_ci",
+            "repository": "${{ github.repository }}",
+            "gitHead": "${{ github.sha }}",
+            "ref": "${{ github.ref }}",
+            "image": "{{DEV_IMAGE_DIGEST}}",
+            "runId": "${{ github.run_id }}",
+            "conclusion": "${{ job.status }}",
+            "finishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
+          JSON
+          cat .atlas/evidence/validation-${{ github.run_id }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atlas-evidence-${{ github.run_id }}
+          path: .atlas/evidence/
+          retention-days: 30

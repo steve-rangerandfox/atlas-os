@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "{{PROJECT_NAME}}",
+  "repository": { "remote": "{{REMOTE_URL}}", "defaultBranch": "{{DEFAULT_BRANCH}}", "visibility": "{{VISIBILITY}}" },
+  "runtime": {
+    "node": "{{NODE_PIN}}",
+    "nodeSource": "{{NODE_PIN_SOURCE}}",
+    "packageManager": "{{PACKAGE_MANAGER}}",
+    "image": "{{DEV_IMAGE_DIGEST}}"
+  },
+  "validation": { "ladder": [] },
+  "policy": {
+    "acceptanceTestPaths": ["tests/acceptance/**"],
+    "enforceMissionScope": true,
+    "interruptionBudget": { "express": 0, "standard": 1, "guarded": 3 }
+  },
+  "invariants": [],
+  "activeMission": null,
+  "gates": {
+    "mergeGate": "github:ruleset:{{DEFAULT_BRANCH}}",
+    "releaseGate": "{{RELEASE_GATE}}",
+    "acceptanceGate": "human:cli:atlas-accept"
+  }
+}

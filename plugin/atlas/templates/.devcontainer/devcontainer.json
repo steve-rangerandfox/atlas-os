@@ -1,0 +1,16 @@
+{
+  "name": "{{PROJECT_NAME}} (Atlas certified)",
+  "//": "Pin by DIGEST, not tag. A tag is not hermetic. Update via .github/workflows/atlas-devimage.yml.",
+  "image": "{{DEV_IMAGE_DIGEST}}",
+  "workspaceFolder": "/workspace",
+  "remoteEnv": {
+    "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright",
+    "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
+    "npm_config_cache": "/workspace/.atlas/cache/npm"
+  },
+  "customizations": {
+    "vscode": { "extensions": ["dbaeumer.vscode-eslint", "ms-playwright.playwright"] }
+  },
+  "postAttachCommand": "node --version && npm --version && npx playwright --version",
+  "//postCreate": "Deliberately absent. If the image needs a setup step at attach time, it is not a certified image."
+}
