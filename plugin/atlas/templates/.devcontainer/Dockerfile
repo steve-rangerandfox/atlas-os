@@ -23,7 +23,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # prints is not verification — this build must FAIL on a wrong major rather than
 # ship an image that looks certified and isn't.
 RUN set -eux; \
-    command -v -a node; \
+    command -v node; \
     test "$(node -p 'process.versions.node.split(".")[0]')" = "{{NODE_MAJOR}}" \
       || { echo "FATAL: node $(node --version) is not major {{NODE_MAJOR}}"; exit 1; }; \
     apt-get update; \
