@@ -1,10 +1,38 @@
-# Atlas governance surfaces. These require the owner's review on every PR,
-# which is what makes them un-widenable by an agent.
-/.atlas/project.json      @{{GITHUB_OWNER}}
-/.atlas/missions/         @{{GITHUB_OWNER}}
-/tests/acceptance/        @{{GITHUB_OWNER}}
-/.github/                 @{{GITHUB_OWNER}}
-/.devcontainer/           @{{GITHUB_OWNER}}
-/package.json             @{{GITHUB_OWNER}}
-/package-lock.json        @{{GITHUB_OWNER}}
-/CONSTITUTION.md          @{{GITHUB_OWNER}}
+# Atlas CODEOWNERS — this file is the risk-class boundary.
+#
+# It decides which changes need the OWNER's tap and which the independent
+# reviewer can clear on its own. There is deliberately NO catch-all: ordinary
+# product code requires no code-owner review, so a reviewer GO plus green tests
+# lets GitHub auto-merge it with zero taps. The paths below are the GUARDED
+# surfaces — schema, auth, money, infrastructure, and Atlas's own controls —
+# where a mistake is expensive or irreversible. Touching any of them requires
+# @OWNER review no matter what the reviewer says. Substitute @OWNER for your
+# GitHub handle; keep the machine account OUT of this file (a non-owner's
+# approval must never satisfy the gate).
+
+# --- Atlas's own enforcement and governance (change this and you change the rules) ---
+/.atlas/**                         @OWNER
+/plugin/atlas/hooks/**             @OWNER
+/.claude/**                        @OWNER
+/CLAUDE.md                         @OWNER
+/AGENTS.md                         @OWNER
+
+# --- CI, deployment, and dependency surfaces ---
+/.github/**                        @OWNER
+/.devcontainer/**                  @OWNER
+/vercel.json                       @OWNER
+/railway.toml                      @OWNER
+/Dockerfile                        @OWNER
+/package.json                      @OWNER
+/package-lock.json                 @OWNER
+
+# --- Data and money: schema, migrations, auth, billing, tokens ---
+/prisma/**                         @OWNER
+/migrations/**                     @OWNER
+/supabase/**                       @OWNER
+**/schema.sql                      @OWNER
+**/*auth*                          @OWNER
+**/*billing*                       @OWNER
+**/*stripe*                        @OWNER
+**/*token*                         @OWNER
+/tests/acceptance/**               @OWNER

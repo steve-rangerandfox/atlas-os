@@ -17,7 +17,7 @@
  * Every decision is appended to .atlas/evidence/policy-decisions.jsonl.
  */
 
-import { appendFileSync, mkdirSync, readFileSync, existsSync, realpathSync} from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, existsSync, realpathSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 // A guard crash must not brick the session. Policy denials are still hard.
@@ -97,6 +97,71 @@ function globToRegExp(glob) {
 
 function matchesAny(relPath, globs) {
   return (globs || []).some((g) => globToRegExp(g).test(relPath));
+}
+
+/**
+ * `g=git; $g push` reached main: FORBIDDEN_COMMANDS matches the literal word "git",
+ * and a variable holding that word is not the word. This is the same class of
+ * indirection the "assembled from a variable" rule already caught for the ARGUMENT
+ * (`git checkout $BRANCH`) but not for the COMMAND itself. Rather than special-case
+ * one more pattern, resolve simple `name=value` assignments textually and re-check
+ * the resolved command too. Deliberately dumb: single hop, no quoting/expansion
+ * semantics, command-substitution or export forms are left alone. It does not need
+ * to be a shell — it only needs to make `$g` visible as `git` to the same regexes
+ * that already catch `git push` written literally.
+ */
+function resolveSimpleVarIndirection(cmd) {
+  const assigns = {};
+  for (const m of cmd.matchAll(/(?:^|[;&\n]|&&|\|\|)\s*([A-Za-z_][A-Za-z0-9_]*)=("[^"]*"|'[^']*'|[^\s;&|]+)/g)) {
+    let val = m[2];
+    if ((val[0] === '"' && val.endsWith('"')) || (val[0] === "'" && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    assigns[m[1]] = val;
+  }
+  const names = Object.keys(assigns);
+  if (!names.length) return cmd;
+  let out = cmd;
+  for (const name of names) {
+    out = out.replace(new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`, "g"), assigns[name]);
+  }
+  return out;
+}
+
+/**
+ * `cat .en*` read `.env` in the tree; the token-scan below denies the literal path
+ * `.env` but a glob is not the literal path — it is a pattern the shell expands
+ * before this guard ever sees a filename. Two defects compounded: the token regex
+ * dropped `*`/`?`/`[]` entirely (so `.en*` was scanned as `.en`), and even an intact
+ * token was never expanded against the filesystem the way a shell would. Fixed by
+ * widening the token regex to keep glob characters, then expanding here exactly as
+ * the shell would (single directory level — sufficient for the secret/protected
+ * paths this guards, which are never legitimately reached through a deep `**`).
+ * An unresolved glob (no matches on disk, e.g. `.env` doesn't exist yet) is NOT
+ * treated as safe — it is checked as its own literal pattern, over-denying by design.
+ */
+function expandGlobToken(cleaned) {
+  if (!/[*?[\]]/.test(cleaned)) return [cleaned];
+  let abs;
+  try {
+    const base = cleaned.startsWith("~")
+      ? path.join(process.env.HOME || "/root", cleaned.slice(1))
+      : path.resolve(ROOT, cleaned);
+    abs = base;
+  } catch {
+    return [cleaned];
+  }
+  const dir = path.dirname(abs);
+  const pattern = path.basename(abs);
+  let entries = [];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [cleaned];
+  }
+  const re = globToRegExp(pattern);
+  const matches = entries.filter((e) => re.test(e)).map((e) => path.join(dir, e));
+  return matches.length ? matches : [cleaned];
 }
 
 /** Repo-relative, POSIX-separated, no leading "./". Null if outside the repo. */
@@ -411,8 +476,12 @@ try {
   /* ---- 1. Shell effects: publication, history, infra, destruction ------- */
   if (toolName === "Bash" || toolName === "BashOutput") {
     const cmd = String(input.command || "");
+    // `g=git; $g push` — a variable holding a forbidden binary's name, invoked
+    // through it. Check both the literal command and this one-hop resolution so
+    // the existing regexes see the effective command, not just the written one.
+    const cmdResolved = resolveSimpleVarIndirection(cmd);
     for (const { re, why } of FORBIDDEN_COMMANDS) {
-      if (re.test(cmd)) {
+      if (re.test(cmd) || re.test(cmdResolved)) {
         return decide("deny", "forbidden-effect", `${why}\nCommand: ${cmd.slice(0, 400)}`, context);
       }
     }
@@ -437,37 +506,44 @@ try {
        Mission scope is deliberately NOT applied to layer (a): doing so would deny
        `cat src/x.js` and `node --test`, and a guard that blocks reading is a guard
        that gets disabled. */
-    const mentioned = (cmd.match(/[A-Za-z0-9._~/@+-]{2,}/g) || []);
+    // Glob characters are kept (not stripped) so a pattern like `.en*` survives as
+    // one token instead of being silently truncated to `.en` — see expandGlobToken.
+    const mentioned = new Set([
+      ...(cmd.match(/[-A-Za-z0-9._~/@+*?[\]]{2,}/g) || []),
+      ...(cmdResolved.match(/[-A-Za-z0-9._~/@+*?[\]]{2,}/g) || []),
+    ]);
     for (const raw of mentioned) {
-      const cleaned = raw.replace(/^['"]+|['"]+$/g, "");
-      const rel = relativize(cleaned);
-      if (rel === null) {
-        // Out-of-repository. relativize() returns null, and simply skipping was
-        // still a bypass: `cat ~/.ssh/id_rsa` and `cat /etc/…` name no in-repo path.
-        // Secrets are never legitimate through the shell, inside the tree or out.
-        const probe = cleaned.replace(/^~\/+/, "").replace(/^\/+/, "");
-        if (matchesAny(probe, secretPaths)) {
-          return decide("deny", "bash-secret-path-external",
-            `${cleaned} is a credential-bearing path outside the repository and this command names it. Atlas never reads or writes secrets.\nCommand: ${cmd.slice(0, 400)}`, context);
+      const quoteStripped = raw.replace(/^['"]+|['"]+$/g, "");
+      for (const cleaned of expandGlobToken(quoteStripped)) {
+        const rel = relativize(cleaned);
+        if (rel === null) {
+          // Out-of-repository. relativize() returns null, and simply skipping was
+          // still a bypass: `cat ~/.ssh/id_rsa` and `cat /etc/…` name no in-repo path.
+          // Secrets are never legitimate through the shell, inside the tree or out.
+          const probe = cleaned.replace(/^~\/+/, "").replace(/^\/+/, "");
+          if (matchesAny(probe, secretPaths)) {
+            return decide("deny", "bash-secret-path-external",
+              `${cleaned} is a credential-bearing path outside the repository and this command names it. Atlas never reads or writes secrets.\nCommand: ${cmd.slice(0, 400)}`, context);
+          }
+          continue;
         }
-        continue;
-      }
-      if (matchesAny(rel, secretPaths)) {
-        return decide("deny", "bash-secret-path",
-          `${rel} is a credential-bearing path and this command names it. Atlas never reads or writes secrets, through any tool.\nCommand: ${cmd.slice(0, 400)}`, context);
-      }
-      const declaredForBash = declaredScope();
-      if (matchesAny(rel, protectedPaths) && !matchesAny(rel, declaredForBash)) {
-        return decide("deny", "bash-protected-path",
-          `${rel} is a protected path and this command names it. Shell access is denied because the guard cannot verify what a shell command does to a file.\n` +
-          (activeMissionId
-            ? `Mission "${activeMissionId}" does not declare it in scope.allowWrite.`
-            : `No active mission declares it.`) +
-          `\nUse Edit/Write, which are checked per path, or escalate to the owner.\nCommand: ${cmd.slice(0, 400)}`, context);
+        if (matchesAny(rel, secretPaths)) {
+          return decide("deny", "bash-secret-path",
+            `${rel} is a credential-bearing path and this command names it. Atlas never reads or writes secrets, through any tool.\nCommand: ${cmd.slice(0, 400)}`, context);
+        }
+        const declaredForBash = declaredScope();
+        if (matchesAny(rel, protectedPaths) && !matchesAny(rel, declaredForBash)) {
+          return decide("deny", "bash-protected-path",
+            `${rel} is a protected path and this command names it. Shell access is denied because the guard cannot verify what a shell command does to a file.\n` +
+            (activeMissionId
+              ? `Mission "${activeMissionId}" does not declare it in scope.allowWrite.`
+              : `No active mission declares it.`) +
+            `\nUse Edit/Write, which are checked per path, or escalate to the owner.\nCommand: ${cmd.slice(0, 400)}`, context);
+        }
       }
     }
 
-    for (const rel of bashWriteTargets(cmd)) {
+    for (const rel of new Set([...bashWriteTargets(cmd), ...bashWriteTargets(cmdResolved)])) {
       const verdict = checkWriteTarget(rel, context);
       if (verdict) return verdict;
     }
