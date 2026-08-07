@@ -1,0 +1,99 @@
+# Atlas independent review — runs the atlas-reviewer role automatically on every PR.
+#
+# This is the required status check `atlas-independent-review`. It is what lets a
+# non-technical owner merge on one informed tap: an adversarial reviewer that did
+# NOT write the change reads the diff, RUNS the repo's own validation (it does not
+# trust that tests pass — it runs them), tries to falsify the change, and posts a
+# plain-language GO / NO-GO to the PR. On NO-GO it fails, which blocks auto-merge.
+#
+# Risk-class routing is NOT done here — it is done by CODEOWNERS scope. A PR that
+# touches a guarded path additionally requires the owner's review (one tap); a PR
+# that touches only ordinary code needs only this check green, and GitHub
+# auto-merge lands it with no tap. See RUNBOOK "The review-and-merge loop".
+name: atlas-independent-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+# Least privilege: read the code, write a PR comment, nothing else.
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: atlas-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  independent-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ---- Owner override --------------------------------------------------
+      # "Block, but I can override." A NO-GO blocks. The owner — and ONLY the
+      # owner, verified by the actor who applied the label — may override with a
+      # deliberate, logged act: add the label `atlas-override-review`. The
+      # machine account cannot self-clear a NO-GO, because it is not the owner.
+      # Override bypasses THIS check only; code-owner review on guarded paths
+      # and the test checks still stand.
+      - name: Honor owner override
+        id: override
+        if: contains(github.event.pull_request.labels.*.name, 'atlas-override-review')
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.sender.login }}" = "${{ vars.ATLAS_OWNER }}" ] \
+             || [ "${{ github.actor }}" = "${{ vars.ATLAS_OWNER }}" ]; then
+            echo "overridden=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Independent review OVERRIDDEN by owner ${{ vars.ATLAS_OWNER }} via atlas-override-review label."
+          else
+            echo "::error::atlas-override-review present but not applied by the owner. Override refused."
+            exit 1
+          fi
+
+      - name: Independent adversarial review
+        if: steps.override.outputs.overridden != 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Reviewer model deliberately settable; prefer a different model than
+          # the author used, so review is independent in model as well as context.
+          claude_args: "--model ${{ vars.ATLAS_REVIEWER_MODEL || 'claude-opus-4-8' }}"
+          prompt: |
+            You are the Atlas independent reviewer running in CI. You did NOT write
+            this change. Follow plugin/atlas/skills/atlas-independent-review/SKILL.md
+            exactly. Review PR #${{ github.event.pull_request.number }}:
+            base ${{ github.event.pull_request.base.sha }} -> head ${{ github.event.pull_request.head.sha }}.
+
+            You MUST:
+            1. Read the full diff.
+            2. RUN the repository's own validation — do not trust it. Use the steps
+               in .atlas/project.json's validation ladder if present, else the repo's
+               `test` / `release:check` scripts, and for atlas-os itself
+               `bash plugin/atlas/hooks/atlas-guard.test.sh`. Report the real result.
+            3. Confirm the tests exercise the real mechanism, not a harness that
+               bypasses it. If they self-fool, that is a NO-GO reason on its own.
+            4. Try to falsify the change with concrete inputs.
+            5. Post ONE PR comment: a <=200-word PLAIN-LANGUAGE verdict a non-coder
+               can act on, headed exactly `ATLAS REVIEW: GO` or `ATLAS REVIEW: NO-GO`,
+               then: the one thing that most mattered, what breaks if wrong + whether
+               it is reversible, and one thing you could not verify.
+            6. Write the single token GO or NO-GO to the file ./atlas-verdict.
+
+      - name: Gate on the verdict
+        if: steps.override.outputs.overridden != 'true'
+        run: |
+          set -euo pipefail
+          if [ ! -f atlas-verdict ]; then
+            echo "::error::Reviewer produced no verdict file. Failing closed — absence of a review is not a pass."
+            exit 1
+          fi
+          verdict="$(tr -d '[:space:]' < atlas-verdict)"
+          echo "Verdict: $verdict"
+          if [ "$verdict" != "GO" ]; then
+            echo "::error::Independent review returned NO-GO. Merge blocked. Owner may override with the atlas-override-review label after reading the reviewer's comment."
+            exit 1
+          fi
