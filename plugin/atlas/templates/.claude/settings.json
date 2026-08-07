@@ -46,8 +46,8 @@
     "OTEL_METRICS_EXPORTER": "otlp",
     "OTEL_LOGS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "{{OTEL_ENDPOINT}}",
-    "ATLAS_GUARD_FAIL_CLOSED": "1"
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "{{OTEL_ENDPOINT}}"
   },
-  "//": "Deny rules hold in every permission mode, including bypass. They are belt-and-braces on top of hooks/atlas-guard.mjs \u2014 the guard is the enforcement, these are the second layer."
+  "//": "Deny rules hold in every permission mode, including bypass. They are belt-and-braces on top of hooks/atlas-guard.mjs \u2014 the guard is the enforcement, these are the second layer.",
+  "///": "No ATLAS_GUARD_FAIL_OPEN here, deliberately: the guard fails CLOSED by default, and that default should ship silent. Setting it to 1 is a one-time, visible, opt-in decision an operator makes themselves \u2014 not something a template sets on their behalf. (An earlier version of this file set the now-unread ATLAS_GUARD_FAIL_CLOSED=1, a dead reference left over from before the guard's fail-polarity was inverted.)"
 }

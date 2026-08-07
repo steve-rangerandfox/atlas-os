@@ -78,18 +78,25 @@ If an agent commits with your credentials, the last pusher is you, the approval 
 
 1. Create a second GitHub account — e.g. `<owner>-atlas` — on its own email.
 2. Settings → Collaborators → add with **Write**. Not Admin. **Do not add it to `CODEOWNERS`** — being a non-owner is the entire point.
-3. As that account, create a **fine-grained** PAT scoped to this repository only:
+3. As that account, create a **classic** PAT — not fine-grained:
 
-   | Permission | Value | Why |
+   **This corrects an earlier version of this runbook, which prescribed a fine-grained token.**
+   GitHub's own docs are explicit: *"For collaborator access to another user's repository, you
+   must use a personal access token (classic)."* A fine-grained PAT cannot authenticate write
+   operations against a personal repo you were added to as a collaborator — only against repos
+   the token's own owner controls. This is a platform limit, not a config choice.
+
+   | Scope | Value | Why |
    |---|---|---|
-   | Contents | Read and write | push branches |
-   | Pull requests | Read and write | **required** to open a PR |
-   | Metadata | Read | automatic |
-   | Administration | No | cannot touch rulesets or bypass lists |
-   | Workflows | No | `.github/workflows/**` stays yours |
-   | Environments, Secrets, Actions | No | |
+   | `repo` | checked | the only scope classic PATs offer below full account access; grants push + PR read/write on repos this account can reach |
+   | `workflow` | **unchecked** | `.github/workflows/**` stays yours — this scope would let the token push changes to CI itself |
+   | everything else | unchecked | no admin, no org, no packages, no deletion |
 
-   `pull_requests: write` permits approving a PR. That is safe **only** because the catch-all `CODEOWNERS` makes this account a non-owner. Remove `require_code_owner_review` and the grant becomes dangerous — they are a pair.
+   There is no finer-grained classic equivalent of "PRs yes, workflows no" split — `repo` bundles
+   push and PR write together. That coarseness is exactly why `require_code_owner_review` with a
+   catch-all-free but still-guarded `CODEOWNERS`, `bypass_actors: []`, and this account **never**
+   appearing in `CODEOWNERS` all have to hold simultaneously: the token's breadth is bounded by
+   the repo's rules, not by the token's own scope list.
 
 4. Never list this account as a `production` environment reviewer.
 
@@ -162,12 +169,12 @@ Scheduled autonomous runs, once §2 is in place:
 ## Checklist
 
 - [ ] Plugin installed; `atlas-guard.test.sh` passes; a deliberate `git push` is denied in-session
-- [ ] `ATLAS_GUARD_FAIL_CLOSED=1` is set — the guard defaults to fail-OPEN on its own internal errors, and no step used to turn that off
+- [ ] `ATLAS_GUARD_FAIL_OPEN` is **unset** (or explicitly `0`) in `.claude/settings.json` — the guard fails CLOSED by default; setting this to `1` is a deliberate, logged opt-out, not something any setup step should do for you
 - [ ] A deliberate `cat .env` and `echo x > .atlas/project.json` are BOTH denied in-session — the shell surface is the half that was unenforced
 - [ ] Ruleset active on the default branch, `bypass_actors` empty
 - [ ] Actions cannot create or approve PRs (the workflow `GITHUB_TOKEN`)
 - [ ] Machine account exists, **Write** collaborator, **not** in `CODEOWNERS`
-- [ ] Machine account PAT: `contents: write` **and** `pull_requests: write`; no Administration, no Workflows
+- [ ] Machine account PAT is **classic**, `repo` scope only, `workflow` unchecked — fine-grained PATs cannot get collaborator write access on a personal repo, full stop
 - [ ] **Proved** it: a trivial PR opened by the machine account was approved and merged by the owner
 - [ ] `production` environment with required reviewers + prevent self-review (public repos)
 - [ ] Checked whether any workflow declares `environment:` — if none does, `gates.releaseGate` says so
