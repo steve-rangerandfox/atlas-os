@@ -1,18 +1,43 @@
 {
   "permissions": {
     "deny": [
-      "Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)",
-      "Read(./secrets/**)", "Read(./credentials/**)",
-      "Read(./**/*.pem)", "Read(./**/*.key)", "Read(./**/*.p12)", "Read(./**/*.pfx)", "Read(./**/*.p8)",
-      "Write(./.env)", "Write(./.env.*)", "Write(./**/.env)", "Write(./**/.env.*)",
-      "Write(./secrets/**)", "Write(./credentials/**)",
-      "Edit(./**/*.pem)", "Edit(./**/*.key)", "Write(./**/*.pem)", "Write(./**/*.key)",
-      "Write(./.git/**)", "Edit(./.git/**)", "Read(./.git/hooks/**)",
-      "Write(./.atlas/project.json)", "Edit(./.atlas/project.json)",
-      "Write(./.atlas/missions/**)", "Edit(./.atlas/missions/**)",
-      "Bash(git push:*)", "Bash(gh pr merge:*)", "Bash(gh pr review:*)", "Bash(gh release:*)",
-      "Bash(npm publish:*)", "Bash(vercel:*)", "Bash(supabase db push:*)",
-      "Bash(terraform apply:*)", "Bash(terraform destroy:*)"
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./secrets/**)",
+      "Read(./credentials/**)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/*.p12)",
+      "Read(./**/*.pfx)",
+      "Read(./**/*.p8)",
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Write(./**/.env)",
+      "Write(./**/.env.*)",
+      "Write(./secrets/**)",
+      "Write(./credentials/**)",
+      "Edit(./**/*.pem)",
+      "Edit(./**/*.key)",
+      "Write(./**/*.pem)",
+      "Write(./**/*.key)",
+      "Write(./.git/**)",
+      "Edit(./.git/**)",
+      "Read(./.git/hooks/**)",
+      "Write(./.atlas/project.json)",
+      "Edit(./.atlas/project.json)",
+      "Write(./.atlas/missions/**)",
+      "Edit(./.atlas/missions/**)",
+      "Bash(git push:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr review:*)",
+      "Bash(gh release:*)",
+      "Bash(npm publish:*)",
+      "Bash(vercel:*)",
+      "Bash(supabase db push:*)",
+      "Bash(terraform apply:*)",
+      "Bash(terraform destroy:*)"
     ]
   },
   "defaultMode": "plan",
@@ -21,7 +46,8 @@
     "OTEL_METRICS_EXPORTER": "otlp",
     "OTEL_LOGS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "{{OTEL_ENDPOINT}}"
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "{{OTEL_ENDPOINT}}",
+    "ATLAS_GUARD_FAIL_CLOSED": "1"
   },
-  "//": "Deny rules hold in every permission mode, including bypass. They are belt-and-braces on top of hooks/atlas-guard.mjs — the guard is the enforcement, these are the second layer."
+  "//": "Deny rules hold in every permission mode, including bypass. They are belt-and-braces on top of hooks/atlas-guard.mjs \u2014 the guard is the enforcement, these are the second layer."
 }

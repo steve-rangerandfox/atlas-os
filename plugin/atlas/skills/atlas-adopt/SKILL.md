@@ -49,6 +49,8 @@ Grep for guarantees the code already enforces structurally (manifest validators,
 
 You cannot configure GitHub rulesets, push a container image, or install a plugin. Print `RUNBOOK.md` §1–§5 with the project's real values substituted, and stop. Say plainly which steps remain and that Atlas is not enforcing anything until the merge gate exists.
 
+Call out **§2a, the machine account**, explicitly and separately. `require_code_owner_review` and `require_last_push_approval` together mean no single identity can ever merge agent work — a project that completes every other step and skips this one has a merge gate that blocks the workflow it was built to enable, and it fails silently the first time an agent opens a pull request.
+
 ## Do not
 
 - Write `.atlas/project.json` values you could not source from the repo.

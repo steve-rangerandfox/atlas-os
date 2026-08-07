@@ -73,6 +73,79 @@ check 0 impl                   "may append evidence"         '{"tool_name":"Writ
 check 2 atlas-mission-control  "may NOT write a live mission" '{"tool_name":"Write","tool_input":{"file_path":".atlas/missions/m2.json"}}'
 check 2 atlas-mission-control  "may NOT write project.json"  '{"tool_name":"Edit","tool_input":{"file_path":".atlas/project.json"}}'
 
+echo
+echo "SHELL SURFACE — the class that was entirely unenforced until the Bash branch"
+echo "  (every one of these exited 0 before the file-target block applied to Bash)"
+check 2 atlas-implementer "bash cannot write .atlas/missions"        '{"tool_name":"Bash","tool_input":{"command":"cat > .atlas/missions/m1.json"}}'
+check 2 atlas-implementer "bash cannot write .atlas/project.json"    '{"tool_name":"Bash","tool_input":{"command":"echo x > .atlas/project.json"}}'
+check 2 atlas-implementer "bash cannot write an acceptance test"     '{"tool_name":"Bash","tool_input":{"command":"echo x > tests/acceptance/a.test.js"}}'
+check 2 atlas-implementer "bash cannot sed -i a manifest"            '{"tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ package.json"}}'
+check 2 atlas-implementer "bash cannot cp over a workflow"           '{"tool_name":"Bash","tool_input":{"command":"cp evil.yml .github/workflows/ci.yml"}}'
+check 2 atlas-implementer "bash cannot read an in-repo secret"       '{"tool_name":"Bash","tool_input":{"command":"cat .env"}}'
+check 2 atlas-implementer "bash cannot read an out-of-repo secret"   '{"tool_name":"Bash","tool_input":{"command":"cat ~/.ssh/id_rsa"}}'
+check 2 atlas-implementer "bash cannot write CLAUDE.md"              '{"tool_name":"Bash","tool_input":{"command":"echo x > CLAUDE.md"}}'
+check 2 atlas-implementer "bash cannot write .claude/agents"         '{"tool_name":"Bash","tool_input":{"command":"echo x > .claude/agents/r.md"}}'
+
+echo
+echo "ESCALATION CHAIN — an agent must not be able to grant itself authority"
+check 2 atlas-implementer "atlas.mjs promote is not an agent action" '{"tool_name":"Bash","tool_input":{"command":"node scripts/atlas.mjs promote wp-e"}}'
+check 2 atlas-implementer "atlas.mjs activate is not an agent action" '{"tool_name":"Bash","tool_input":{"command":"node plugin/atlas/scripts/atlas.mjs activate m1"}}'
+check 2 atlas-implementer "symlink creation is denied"               '{"tool_name":"Bash","tool_input":{"command":"ln -s /etc/passwd ./link"}}'
+check 2 atlas-implementer "git config cannot relocate hooks"         '{"tool_name":"Bash","tool_input":{"command":"git config core.hooksPath /tmp/x"}}'
+
+echo
+echo "EVASIONS — the anchor used to require the verb adjacent to the binary"
+check 2 atlas-implementer "git -C . push"                            '{"tool_name":"Bash","tool_input":{"command":"git -C . push origin main"}}'
+check 2 atlas-implementer "git -c k=v push"                          '{"tool_name":"Bash","tool_input":{"command":"git -c a=b push"}}'
+check 2 atlas-implementer "git --no-pager push"                      '{"tool_name":"Bash","tool_input":{"command":"git --no-pager push"}}'
+check 2 atlas-implementer "verb from a variable"                     '{"tool_name":"Bash","tool_input":{"command":"P=push; git $P"}}'
+check 2 atlas-implementer "gh api --method POST"                     '{"tool_name":"Bash","tool_input":{"command":"gh api --method POST /repos/x/y/merges"}}'
+check 2 atlas-implementer "eval hides the command"                   '{"tool_name":"Bash","tool_input":{"command":"eval \"git push\""}}'
+
+echo
+echo "NO OVER-DENIAL — a guard that blocks ordinary work gets switched off"
+check 0 atlas-implementer "reading source is fine"                   '{"tool_name":"Bash","tool_input":{"command":"cat src/app.js"}}'
+check 0 atlas-implementer "running tests is fine"                    '{"tool_name":"Bash","tool_input":{"command":"node --test tests/unit"}}'
+check 0 atlas-implementer "grep is fine"                             '{"tool_name":"Bash","tool_input":{"command":"grep -rn foo src/"}}'
+check 0 atlas-implementer "git status is fine"                       '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
+check 0 atlas-implementer "git -C . status is fine"                  '{"tool_name":"Bash","tool_input":{"command":"git -C . status"}}'
+check 0 atlas-implementer "gh pr view is fine"                       '{"tool_name":"Bash","tool_input":{"command":"gh pr view 12"}}'
+check 0 atlas-implementer "git config --get is fine"                 '{"tool_name":"Bash","tool_input":{"command":"git config --get user.name"}}'
+check 0 atlas-implementer "writing IN-scope source via shell is fine" '{"tool_name":"Bash","tool_input":{"command":"echo hi > src/lib/new.js"}}'
+check 2 atlas-implementer "shell write OUTSIDE mission scope denies"  '{"tool_name":"Bash","tool_input":{"command":"echo hi > src/unrelated.txt"}}'
+
+echo
+echo "POLICY FLOOR — a broad allowWrite must not widen what Atlas enforces"
+BROAD="$(mktemp -d)"; mkdir -p "$BROAD/.atlas/missions" "$BROAD/.claude/agents" "$BROAD/.github/workflows"
+printf '%s' '{"policy":{},"activeMission":"wide"}' > "$BROAD/.atlas/project.json"
+printf '%s' '{ "id":"wide","scope":{"allowWrite":["**"]} }' > "$BROAD/.atlas/missions/wide.json"
+bcheck() { # expected name payload
+  local exp="$1" name="$2" payload="$3" got
+  printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$BROAD" ATLAS_ROLE=atlas-implementer node "$GUARD" >/dev/null 2>&1; got=$?
+  if [ "$got" = "$exp" ]; then pass=$((pass+1)); printf '  ok   %s\n' "$name"
+  else fail=$((fail+1)); printf '  FAIL %s (expected %s, got %s)\n' "$name" "$exp" "$got"; fi
+}
+bcheck 2 'allowWrite:["**"] cannot reach .atlas/project.json' '{"tool_name":"Write","tool_input":{"file_path":".atlas/project.json"}}'
+bcheck 2 'allowWrite:["**"] cannot reach .atlas/missions'     '{"tool_name":"Write","tool_input":{"file_path":".atlas/missions/x.json"}}'
+bcheck 2 'allowWrite:["**"] cannot reach .claude/agents'      '{"tool_name":"Write","tool_input":{"file_path":".claude/agents/r.md"}}'
+bcheck 2 'allowWrite:["**"] cannot reach CLAUDE.md'           '{"tool_name":"Write","tool_input":{"file_path":"CLAUDE.md"}}'
+bcheck 2 'allowWrite:["**"] cannot reach a workflow'          '{"tool_name":"Write","tool_input":{"file_path":".github/workflows/ci.yml"}}'
+bcheck 2 'nor via the shell'                                  '{"tool_name":"Bash","tool_input":{"command":"echo x > .atlas/project.json"}}'
+bcheck 0 'but ordinary source is still in scope'              '{"tool_name":"Write","tool_input":{"file_path":"src/anything.js"}}'
+rm -rf "$BROAD"
+
+echo
+echo "FAIL POLARITY — the guard's own failure must deny, not permit"
+BAD="$(mktemp -d)"; mkdir -p "$BAD/.atlas"
+printf '%s' '{ this is not valid json' > "$BAD/.atlas/project.json"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"src/x.js"}}' | CLAUDE_PROJECT_DIR="$BAD" node "$GUARD" >/dev/null 2>&1
+if [ $? != 0 ]; then pass=$((pass+1)); echo "  ok   unparseable policy denies (was: allowed)"
+else fail=$((fail+1)); echo "  FAIL unparseable policy still permits"; fi
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"src/x.js"}}' | CLAUDE_PROJECT_DIR="$BAD" ATLAS_GUARD_FAIL_OPEN=1 node "$GUARD" >/dev/null 2>&1
+if [ $? = 0 ]; then pass=$((pass+1)); echo "  ok   explicit ATLAS_GUARD_FAIL_OPEN=1 escape hatch works"
+else fail=$((fail+1)); echo "  FAIL escape hatch broken"; fi
+rm -rf "$BAD"
+
 echo "non-adopted repository -> guard has no opinion"
 EMPTY="$(mktemp -d)"
 printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | CLAUDE_PROJECT_DIR="$EMPTY" node "$GUARD" >/dev/null 2>&1
