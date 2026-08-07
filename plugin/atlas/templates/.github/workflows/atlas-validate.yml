@@ -40,16 +40,6 @@ jobs:
             console.log("node pin satisfied");
           ' "$want" "$have"
 
-      - name: Manifests unchanged by the working tree
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          if ! git diff --quiet -- package.json package-lock.json; then
-            echo "::error::package.json or package-lock.json is modified. Manifest changes are a human decision."
-            git diff --stat -- package.json package-lock.json
-            exit 1
-          fi
-
       - name: Dependencies are already baked (cache hit expected)
         run: |
           set -euo pipefail
@@ -58,6 +48,23 @@ jobs:
             npm ci --ignore-scripts
           fi
           test -x node_modules/.bin/playwright || { echo "::error::playwright binary missing"; exit 1; }
+
+      - name: Manifests unmutated by the build
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # This step used to run immediately after actions/checkout, where a fresh
+          # checkout has no unstaged changes by construction — so `git diff` was
+          # always clean and the rung reported green regardless of the PR. It now
+          # runs AFTER dependency restore, where it asserts something real: that
+          # `npm ci` did not rewrite the lockfile (engine mismatch, lockfileVersion
+          # drift, a postinstall touching a manifest). Whether the PR *itself*
+          # changes a manifest is a human decision and CODEOWNERS already enforces it.
+          if ! git diff --quiet -- package.json package-lock.json; then
+            echo "::error::The build mutated package.json or package-lock.json. The image and the lockfile disagree."
+            git diff --stat -- package.json package-lock.json
+            exit 1
+          fi
 
 {{LADDER_STEPS}}
 

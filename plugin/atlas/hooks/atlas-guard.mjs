@@ -17,22 +17,45 @@
  * Every decision is appended to .atlas/evidence/policy-decisions.jsonl.
  */
 
-import { appendFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, existsSync, realpathSync} from "node:fs";
 import path from "node:path";
 
 // A guard crash must not brick the session. Policy denials are still hard.
-// Set ATLAS_GUARD_FAIL_CLOSED=1 once you trust the guard in your environment.
-const FAIL_OPEN = process.env.ATLAS_GUARD_FAIL_CLOSED !== "1";
+// Polarity inverted deliberately. This used to read
+//   const FAIL_OPEN = process.env.ATLAS_GUARD_FAIL_CLOSED !== "1";
+// i.e. a guard that crashed ALLOWED the call, and no adoption step ever turned that
+// off — so every adopting project ran fail-open forever without choosing to. A control
+// whose own failure mode is "permit" is the pattern this guard exists to prevent.
+// The escape hatch is now explicit and opt-in, so the unsafe state requires a decision.
+const FAIL_OPEN = process.env.ATLAS_GUARD_FAIL_OPEN === "1";
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const ATLAS_DIR = path.join(ROOT, ".atlas");
 
 /* ------------------------------------------------------------------ utils */
 
-function readJson(file, fallback = null) {
+/**
+ * `absent` and `unparseable` are different facts and must not collapse into one.
+ * A missing .atlas/project.json means the repository is not adopted, and the guard
+ * correctly has no opinion. A present-but-broken one means something is wrong with
+ * the policy itself — and treating that as "not adopted" silently disabled every
+ * rule. A merge conflict or a bad edit was enough to turn enforcement off with no
+ * signal. `strict` callers get a thrown error, which the fail-closed path denies.
+ */
+function readJson(file, fallback = null, { strict = false } = {}) {
+  let raw;
   try {
-    return JSON.parse(readFileSync(file, "utf8"));
+    raw = readFileSync(file, "utf8");
   } catch {
+    return fallback; // genuinely absent
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    if (strict) {
+      throw new Error(`${file} exists but is not valid JSON: ${err.message}. ` +
+        `Atlas cannot evaluate policy it cannot read, so the call is denied.`);
+    }
     return fallback;
   }
 }
@@ -79,8 +102,24 @@ function matchesAny(relPath, globs) {
 /** Repo-relative, POSIX-separated, no leading "./". Null if outside the repo. */
 function relativize(target) {
   if (!target || typeof target !== "string") return null;
-  const abs = path.resolve(ROOT, target);
-  const rel = path.relative(ROOT, abs);
+  let abs = path.resolve(ROOT, target);
+  // resolve() is lexical, so a symlink inside the repo pointing out of it produced
+  // an in-repo relative path and passed every check. Walk to the nearest existing
+  // ancestor and realpath THAT — the target itself often does not exist yet (Write).
+  try {
+    let probe = abs, tail = [];
+    for (;;) {
+      try { probe = realpathSync(probe); break; } catch {
+        const parent = path.dirname(probe);
+        if (parent === probe) { probe = null; break; }
+        tail.unshift(path.basename(probe));
+        probe = parent;
+      }
+    }
+    if (probe) abs = tail.length ? path.join(probe, ...tail) : probe;
+  } catch { /* fall through to the lexical result */ }
+  const root = (() => { try { return realpathSync(ROOT); } catch { return ROOT; } })();
+  const rel = path.relative(root, abs);
   if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return null;
   return rel.split(path.sep).join("/");
 }
@@ -116,10 +155,35 @@ function decide(verdict, rule, detail, context) {
 
 /* ------------------------------------------------------------------ config */
 
-const project = readJson(path.join(ATLAS_DIR, "project.json"), null);
+// Read eagerly but defer the throw: a top-level throw fires during module init,
+// outside the try/catch that honours the fail polarity, so ATLAS_GUARD_FAIL_OPEN
+// could not rescue it and the escape hatch was inert.
+let policyError = null;
+const project = (() => {
+  try {
+    return readJson(path.join(ATLAS_DIR, "project.json"), null, { strict: true });
+  } catch (err) {
+    policyError = err;
+    return null;
+  }
+})();
 
 // Not an adopted Atlas project → this guard has no opinion.
-if (!project) process.exit(0);
+// `project === null` has two causes and they must not share an exit. Absent means the
+// repository is not adopted and the guard genuinely has no opinion. Unparseable means
+// the policy exists and cannot be evaluated — and taking the unadopted branch there is
+// how a merge conflict in .atlas/project.json silently switched enforcement off.
+if (!project) {
+  if (policyError) {
+    if (process.env.ATLAS_GUARD_FAIL_OPEN === "1") process.exit(0);
+    process.stderr.write(
+      `ATLAS POLICY DENIED [unreadable-policy]\n${policyError.message}\n` +
+        `Fix .atlas/project.json, or set ATLAS_GUARD_FAIL_OPEN=1 to accept an unenforced session.\n`,
+    );
+    process.exit(2);
+  }
+  process.exit(0);
+}
 
 const policy = project.policy || {};
 const activeMissionId = project.activeMission || null;
@@ -142,8 +206,12 @@ const DEFAULT_PROTECTED = [
   ".github/CODEOWNERS",
   "CODEOWNERS",
   ".atlas/**",
-  ".claude/settings.json",
-  ".claude/settings.local.json",
+  // Anything that grants permission to a future session. A role able to write
+  // these can widen its own authority for every subsequent run, which is a
+  // strictly larger capability than any single mission's scope.
+  ".claude/**",
+  "CLAUDE.md",
+  "AGENTS.md",
   ".mcp.json",
   ".devcontainer/**",
   "vercel.json",
@@ -167,23 +235,63 @@ const DEFAULT_SECRETS = [
   "**/id_ed25519*",
   "**/service-account*.json",
   "**/.pypirc",
+  // `**/.env.*` does not match `production.env`; these were all reachable.
+  "**/*.env",
+  "**/.aws/**",
+  "**/.git-credentials",
+  "**/.netrc",
+  "**/terraform.tfstate*",
+  "**/.kube/config",
+  "**/kubeconfig",
+  "**/.docker/config.json",
+  "**/*.keystore",
+  "**/*.jks",
 ];
 
 // Effects that must never be reachable from an agent, in any mission.
 // Publication, history mutation, infrastructure and destructive commands.
 const FORBIDDEN_COMMANDS = [
-  { re: /\bgit\s+push\b/, why: "Publication requires a human. Push is the release boundary." },
-  { re: /\bgit\s+(commit\s+--amend|rebase|reset\s+--hard|filter-branch|filter-repo)\b/, why: "History mutation requires a human." },
-  { re: /\bgit\s+(tag|switch|checkout)\s+.*(-d|-D|--delete)\b/, why: "Ref deletion requires a human." },
-  { re: /\bgh\s+(pr\s+(merge|review)|release|workflow\s+run|api\b.*-X\s*(POST|PUT|PATCH|DELETE))/, why: "Merging, approving, releasing and write-API calls are human authority." },
+  { re: /\bgit\s+(?:(?:-[A-Za-z]|--[A-Za-z][A-Za-z-]*)(?:=\S+)?(?:\s+[^\s-]\S*)?\s+)*push\b/, why: "Publication requires a human. Push is the release boundary." },
+  { re: /\bgit\s+(?:(?:-[A-Za-z]|--[A-Za-z][A-Za-z-]*)(?:=\S+)?(?:\s+[^\s-]\S*)?\s+)*(commit\s+--amend|rebase|reset\s+--hard|filter-branch|filter-repo)\b/, why: "History mutation requires a human." },
+  { re: /\bgit\s+(?:(?:-[A-Za-z]|--[A-Za-z][A-Za-z-]*)(?:=\S+)?(?:\s+[^\s-]\S*)?\s+)*(tag|switch|checkout)\s+.*(-d|-D|--delete)\b/, why: "Ref deletion requires a human." },
+  { re: /\bgh\s+(?:(?:-[A-Za-z]|--[A-Za-z][A-Za-z-]*)(?:=\S+)?(?:\s+[^\s-]\S*)?\s+)*(pr\s+(merge|review)|release|workflow\s+run|api\b.*(-X|--method)\s*(POST|PUT|PATCH|DELETE))/, why: "Merging, approving, releasing and write-API calls are human authority." },
   { re: /\bnpm\s+(publish|version)\b|\byarn\s+publish\b|\bpnpm\s+publish\b/, why: "Package publication requires a human." },
   { re: /\b(vercel|netlify|fly|railway)\s+(deploy|--prod)\b|\bvercel\s+--prod\b/, why: "Deployment requires a human." },
   { re: /\bsupabase\s+(db\s+push|migration\s+up|link)\b/, why: "Applying migrations requires a human." },
   { re: /\b(terraform\s+(apply|destroy)|pulumi\s+up|kubectl\s+(apply|delete)|helm\s+(install|upgrade|uninstall))\b/, why: "Infrastructure mutation requires a human." },
-  { re: /\bgit\s+clean\s+-[a-z]*[xX]/, why: "git clean -x destroys untracked state including Atlas evidence." },
+  { re: /\bgit\s+(?:(?:-[A-Za-z]|--[A-Za-z][A-Za-z-]*)(?:=\S+)?(?:\s+[^\s-]\S*)?\s+)*clean\s+-[a-z]*[xX]/, why: "git clean -x destroys untracked state including Atlas evidence." },
   { re: /\brm\s+-rf\s+(\/|~|\$HOME)/, why: "Destructive filesystem command." },
   { re: /\bcurl\b[^|;]*\|\s*(ba)?sh\b|\bwget\b[^|;]*\|\s*(ba)?sh\b/, why: "Piping network content into a shell is never permitted." },
   { re: /\bchmod\s+(777|-R\s+777)\b/, why: "Blanket permission changes are not permitted." },
+  { re: /\b(git|gh|npm|npx|supabase|vercel)\s+[^\s;|&]*\$/, why: "A subcommand assembled from a variable cannot be checked. Write the command literally." },
+  { re: /\beval\b/, why: "eval makes the effective command unknowable to any static check." },
+  // atlas.mjs is the HUMAN authority CLI. Its own header claims it is "deliberately
+  // NOT reachable from any agent tool surface" — it was, via Bash, and an agent
+  // could promote and activate a mission it had drafted, thereby choosing its own
+  // scope.allowWrite. That is the whole escalation chain; this is its choke point.
+  { re: /atlas\.mjs\b/, why: "atlas.mjs is human authority. Promotion, activation and acceptance are not agent actions." },
+  // Symlink creation defeats path checking by construction.
+  { re: /\bln\s+(-s|--symbolic)\b/, why: "Symlinks can redirect a checked path to an unchecked one." },
+  // git config can relocate hooks or install a credential helper.
+  { re: /\bgit\s+(?:(?:-[A-Za-z]|--[A-Za-z][A-Za-z-]*)(?:=\S+)?(?:\s+[^\s-]\S*)?\s+)*config\b(?!\s+--get)/, why: "git config can relocate hooksPath or install a credential helper." },
+];
+
+// Paths that decide what Atlas itself enforces. A mission may legitimately declare
+// `package.json` or `migrations/**` in scope — that is a normal guarded mission. It may
+// never declare these, because writing them rewrites the boundary rather than working
+// inside it. Enforced below by stripping them from the mission's own allowlist, so a
+// broad `allowWrite: ["**"]` widens nothing that matters. This closes the escalation
+// even if promotion is reached by a path FORBIDDEN_COMMANDS does not anticipate.
+const POLICY_CRITICAL = [
+  ".atlas/project.json",
+  ".atlas/missions/**",
+  ".claude/**",
+  "CLAUDE.md",
+  "AGENTS.md",
+  ".github/workflows/**",
+  ".github/CODEOWNERS",
+  "CODEOWNERS",
+  ".mcp.json",
 ];
 
 const protectedPaths = policy.protectedPaths || DEFAULT_PROTECTED;
@@ -230,7 +338,76 @@ const context = { tool: toolName, role, mission: activeMissionId };
 const WRITE_TOOLS = new Set(["Edit", "Write", "NotebookEdit", "MultiEdit"]);
 const READ_TOOLS = new Set(["Read", "Grep", "Glob"]);
 
+/**
+ * Unambiguous write targets in a shell command. Not a parser and not complete —
+ * it recognises the forms where the destination is not in doubt. Layer (a) above
+ * is what actually holds the line for secrets and protected paths; this adds
+ * acceptance-test ownership and mission scope for the cases we can read reliably.
+ */
+function bashWriteTargets(cmd) {
+  const out = new Set();
+  const add = (t) => {
+    if (!t) return;
+    const rel = relativize(String(t).replace(/^['"]+|['"]+$/g, ""));
+    if (rel !== null) out.add(rel);
+  };
+  // redirection: >file  >>file  2>file  &>file
+  for (const m of cmd.matchAll(/(?:^|[\s;&|])\d*&?>>?\s*([^\s;&|<>]+)/g)) add(m[1]);
+  // tee [-a] file...
+  for (const m of cmd.matchAll(/\btee\s+(?:-a\s+|--append\s+)*([^\s;&|<>]+)/g)) add(m[1]);
+  // sed -i / perl -i  (last non-flag token)
+  for (const m of cmd.matchAll(/\b(?:sed|perl)\s+[^;&|]*?-i[^\s]*\s+([^;&|]+)/g)) {
+    const toks = m[1].trim().split(/\s+/).filter((t) => !t.startsWith("-"));
+    if (toks.length) add(toks[toks.length - 1]);
+  }
+  // dd of=file
+  for (const m of cmd.matchAll(/\bdd\s+[^;&|]*\bof=([^\s;&|]+)/g)) add(m[1]);
+  // cp / mv / install / rsync — destination is the last argument
+  for (const m of cmd.matchAll(/\b(?:cp|mv|install|rsync)\s+([^;&|]+)/g)) {
+    const toks = m[1].trim().split(/\s+/).filter((t) => !t.startsWith("-"));
+    if (toks.length > 1) add(toks[toks.length - 1]);
+  }
+  // truncate -s N file
+  for (const m of cmd.matchAll(/\btruncate\s+[^;&|]*?\s([^\s;&|-][^\s;&|]*)\s*$/gm)) add(m[1]);
+  return [...out];
+}
+
+/**
+ * The write rule set, applied to one already-relativized path. Returns a decision
+ * to short-circuit on, or null to continue. Factored out so the Bash branch and the
+ * file-tool branch cannot drift — the drift between them was the original defect.
+ */
+/**
+ * The mission's declared scope, with any entry that would sweep a policy-critical
+ * path removed. `allowWrite: ["**"]` therefore grants everything EXCEPT the files
+ * that decide enforcement — which is what makes the protected floor a floor.
+ */
+function declaredScope() {
+  const raw = (mission && mission.scope && mission.scope.allowWrite) || [];
+  return raw.filter((pattern) => !POLICY_CRITICAL.some((crit) => matchesAny(crit, [pattern])));
+}
+
+function checkWriteTarget(rel, context) {
+  if (matchesAny(rel, acceptancePaths) && role !== "atlas-acceptance-engineer") {
+    return decide("deny", "acceptance-tests-immutable",
+      `${rel} is an acceptance test and this command writes it. Only atlas-acceptance-engineer may write these.\n` +
+      `If the criterion is wrong, that is a mission amendment for Mission Control — not a test edit.`, context);
+  }
+  if (matchesAny(rel, alwaysWritable)) return null;
+  const declared = declaredScope();
+  if (enforceScope && mission && declared.length > 0 && !matchesAny(rel, declared)) {
+    return decide("deny", "outside-mission-scope",
+      `${rel} is written by this command and is outside the declared file scope of mission "${activeMissionId}".\n` +
+      `Declared: ${declared.join(", ")}\n` +
+      `Report this as a blocker rather than widening scope yourself.`, context);
+  }
+  return null;
+}
+
 try {
+  // Surfaced here rather than at read time so the fail polarity applies to it.
+  if (policyError) throw policyError;
+
   /* ---- 1. Shell effects: publication, history, infra, destruction ------- */
   if (toolName === "Bash" || toolName === "BashOutput") {
     const cmd = String(input.command || "");
@@ -239,6 +416,62 @@ try {
         return decide("deny", "forbidden-effect", `${why}\nCommand: ${cmd.slice(0, 400)}`, context);
       }
     }
+    /* The path rules below used to be unreachable from Bash: this branch returned
+       `allow` before the file-target block, so every secret and protected path was
+       writable and readable through the shell. `cat .env`, `echo x > .atlas/project.json`
+       and `echo x > tests/acceptance/a.test.js` all exited 0.
+
+       The guard cannot parse shell — variables, command substitution, quoting and
+       `eval` make the touched-file set undecidable, and the agent controls the shape.
+       So it does not try to extract targets. Two layers instead, both conservative:
+
+         (a) any token anywhere in the command that resolves to a secret or protected
+             path denies the command outright, regardless of what the command does
+             with it. This over-denies (mentioning `.env` in an echo is refused) and
+             that is the correct failure direction — the file tools are precisely
+             checked and are the right channel for these paths.
+         (b) unambiguous write forms — redirection, tee, sed -i, cp/mv destination,
+             dd of= — additionally carry the full write rule set including mission
+             scope, because for those the target is not in doubt.
+
+       Mission scope is deliberately NOT applied to layer (a): doing so would deny
+       `cat src/x.js` and `node --test`, and a guard that blocks reading is a guard
+       that gets disabled. */
+    const mentioned = (cmd.match(/[A-Za-z0-9._~/@+-]{2,}/g) || []);
+    for (const raw of mentioned) {
+      const cleaned = raw.replace(/^['"]+|['"]+$/g, "");
+      const rel = relativize(cleaned);
+      if (rel === null) {
+        // Out-of-repository. relativize() returns null, and simply skipping was
+        // still a bypass: `cat ~/.ssh/id_rsa` and `cat /etc/…` name no in-repo path.
+        // Secrets are never legitimate through the shell, inside the tree or out.
+        const probe = cleaned.replace(/^~\/+/, "").replace(/^\/+/, "");
+        if (matchesAny(probe, secretPaths)) {
+          return decide("deny", "bash-secret-path-external",
+            `${cleaned} is a credential-bearing path outside the repository and this command names it. Atlas never reads or writes secrets.\nCommand: ${cmd.slice(0, 400)}`, context);
+        }
+        continue;
+      }
+      if (matchesAny(rel, secretPaths)) {
+        return decide("deny", "bash-secret-path",
+          `${rel} is a credential-bearing path and this command names it. Atlas never reads or writes secrets, through any tool.\nCommand: ${cmd.slice(0, 400)}`, context);
+      }
+      const declaredForBash = declaredScope();
+      if (matchesAny(rel, protectedPaths) && !matchesAny(rel, declaredForBash)) {
+        return decide("deny", "bash-protected-path",
+          `${rel} is a protected path and this command names it. Shell access is denied because the guard cannot verify what a shell command does to a file.\n` +
+          (activeMissionId
+            ? `Mission "${activeMissionId}" does not declare it in scope.allowWrite.`
+            : `No active mission declares it.`) +
+          `\nUse Edit/Write, which are checked per path, or escalate to the owner.\nCommand: ${cmd.slice(0, 400)}`, context);
+      }
+    }
+
+    for (const rel of bashWriteTargets(cmd)) {
+      const verdict = checkWriteTarget(rel, context);
+      if (verdict) return verdict;
+    }
+
     return decide("allow", "bash-ok", cmd.slice(0, 200), context);
   }
 
@@ -290,7 +523,17 @@ try {
   }
 
   // 2c. Protected infrastructure paths require explicit mission scope.
-  const declared = (mission && mission.scope && mission.scope.allowWrite) || [];
+  const declared = declaredScope();
+  if (matchesAny(rel, POLICY_CRITICAL)) {
+    return decide(
+      "deny",
+      "policy-critical-path",
+      `${rel} decides what Atlas enforces. No mission may declare it in scope.allowWrite — ` +
+        `a role able to write it could widen its own authority for every future session.\n` +
+        `This is an owner action, outside any mission.`,
+      context,
+    );
+  }
   if (matchesAny(rel, protectedPaths) && !matchesAny(rel, declared)) {
     return decide(
       "deny",

@@ -52,19 +52,52 @@ gh api -X POST repos/OWNER/REPO/rulesets --input - <<'JSON'
     { "type": "required_status_checks",
       "parameters": { "strict_required_status_checks_policy": true,
         "required_status_checks": [ { "context": "atlas-validate" } ] } },
-    { "type": "file_path_restriction",
-      "parameters": { "restricted_file_paths": [".github/workflows/**", ".atlas/project.json", ".atlas/missions/**"] } }
   ]
 }
 JSON
 ```
 
+**Not included, deliberately:** `file_path_restriction`. It is a *push* ruleset rule, and push rulesets are unavailable on user-owned repositories. Adding it to a branch ruleset is rejected. On a user-owned repo, path protection comes from CODEOWNERS plus required code-owner review.
+
 `bypass_actors: []` is load-bearing. One app in that list and the whole model collapses.
 
-Then, and this is the single most important token setting: **Settings → Actions → General → Workflow permissions → uncheck "Allow GitHub Actions to create and approve pull requests."** If you give an agent identity its own PAT or App token, grant `contents: write` only — never `pull_requests: write`, because the permission that opens a PR also approves one.
+Then: **Settings → Actions → General → Workflow permissions → uncheck "Allow GitHub Actions to create and approve pull requests."** That is about the workflow `GITHUB_TOKEN`, and it should never be able to open or approve a PR.
+
+**Do not generalise that to the machine account.** An earlier version of this runbook said to grant an agent identity `contents: write` only and never `pull_requests: write`. That advice makes the loop impossible: without `pull_requests: write` the machine account cannot open a pull request at all, so agent work can never be proposed. See §2a.
 
 ---
 
+## 2a. The machine account — without this, nothing merges
+
+Two rules from §2 compound into a hard deadlock:
+
+- `require_code_owner_review` plus a catch-all `CODEOWNERS` means **only your approval satisfies the gate**.
+- `require_last_push_approval` means the most recent push must be approved **by someone other than whoever pushed it**.
+
+If an agent commits with your credentials, the last pusher is you, the approval must come from someone else, and the only person who counts is you. **No single identity can satisfy both rules.**
+
+1. Create a second GitHub account — e.g. `<owner>-atlas` — on its own email.
+2. Settings → Collaborators → add with **Write**. Not Admin. **Do not add it to `CODEOWNERS`** — being a non-owner is the entire point.
+3. As that account, create a **fine-grained** PAT scoped to this repository only:
+
+   | Permission | Value | Why |
+   |---|---|---|
+   | Contents | Read and write | push branches |
+   | Pull requests | Read and write | **required** to open a PR |
+   | Metadata | Read | automatic |
+   | Administration | No | cannot touch rulesets or bypass lists |
+   | Workflows | No | `.github/workflows/**` stays yours |
+   | Environments, Secrets, Actions | No | |
+
+   `pull_requests: write` permits approving a PR. That is safe **only** because the catch-all `CODEOWNERS` makes this account a non-owner. Remove `require_code_owner_review` and the grant becomes dangerous — they are a pair.
+
+4. Never list this account as a `production` environment reviewer.
+
+**Prove it.** As the machine account, open a one-line PR and confirm you can approve and merge it.
+
+**One consequence.** With `dismiss_stale_reviews_on_push` and `require_last_push_approval` both on, an agent push after your approval discards it. Order: agent finishes → you review once → merge.
+
+---
 ## 3. The release gate (public repos, free on Pro)
 
 Settings → Environments → New environment → `production`:
@@ -73,7 +106,15 @@ Settings → Environments → New environment → `production`:
 - **Prevent self-review:** on.
 - Deployment branches: protected branches only.
 
-Record it in `.atlas/project.json` → `gates.releaseGate: "github:environment:production"`.
+Record it in `.atlas/project.json` → `gates.releaseGate` — **but record what is true, not what you configured.**
+
+Environment protection rules only apply to workflow jobs that declare `environment:`. Check first:
+
+```bash
+grep -rn "environment:" .github/workflows/ || echo "NOTHING DECLARES IT — the environment is inert"
+```
+
+If nothing declares it and your host deploys the default branch automatically (Vercel's and Netlify's Git integrations both do), your merge gate *is* your release gate: record `gates.releaseGate: "github:ruleset:main"`. Writing `github:environment:production` in that case puts a control in the governance file that does not exist.
 
 (On a private repo this is Enterprise Cloud only. The §2 ruleset is then your gate; it is sufficient.)
 
@@ -121,11 +162,16 @@ Scheduled autonomous runs, once §2 is in place:
 ## Checklist
 
 - [ ] Plugin installed; `atlas-guard.test.sh` passes; a deliberate `git push` is denied in-session
+- [ ] `ATLAS_GUARD_FAIL_CLOSED=1` is set — the guard defaults to fail-OPEN on its own internal errors, and no step used to turn that off
+- [ ] A deliberate `cat .env` and `echo x > .atlas/project.json` are BOTH denied in-session — the shell surface is the half that was unenforced
 - [ ] Ruleset active on the default branch, `bypass_actors` empty
-- [ ] Actions cannot create or approve PRs
-- [ ] Agent token has `contents: write` only
+- [ ] Actions cannot create or approve PRs (the workflow `GITHUB_TOKEN`)
+- [ ] Machine account exists, **Write** collaborator, **not** in `CODEOWNERS`
+- [ ] Machine account PAT: `contents: write` **and** `pull_requests: write`; no Administration, no Workflows
+- [ ] **Proved** it: a trivial PR opened by the machine account was approved and merged by the owner
 - [ ] `production` environment with required reviewers + prevent self-review (public repos)
+- [ ] Checked whether any workflow declares `environment:` — if none does, `gates.releaseGate` says so
 - [ ] Dev image built and **digest**-pinned in devcontainer and `project.json`
 - [ ] `atlas-validate` is a required status check
 - [ ] Telemetry exporting
-- [ ] `node scripts/atlas.mjs status` reports both gates configured
+- [ ] `node scripts/atlas.mjs status` reports the gates that actually exist, not the ones you configured
