@@ -51,20 +51,20 @@ accepted. If the evidence for a claim does not exist, report the claim as
 
 ## Output — the verdict is the product
 
-Post exactly one PR comment. First line is verbatim one of:
+Return your verdict as the run's **structured output**. The workflow forces a JSON
+schema and reads it back — you do NOT write a file or post a comment yourself; the
+workflow posts the plain-language comment and gates the merge on your verdict. Fill:
 
-- `ATLAS REVIEW: GO`
-- `ATLAS REVIEW: NO-GO`
+- `verdict` — exactly `GO` or `NO-GO`.
+- `summary` — ≤200 words, plain language, no code: the single most important thing
+  you checked and what you found; what breaks if it is wrong and whether it is
+  reversible; one thing you could **not** verify, stated honestly.
+- `most_important`, `blast_radius`, `unverified` — the same three points as their
+  own fields, so the posted comment can surface them cleanly.
 
-Then, in ≤200 words of plain language with no code:
-
-- The single most important thing you checked and what you found.
-- What breaks if it is wrong, and whether it is reversible.
-- One thing you could **not** verify, stated honestly.
-
-Then write the single token `GO` or `NO-GO` to `./atlas-verdict` so the workflow
-can gate on it. **Default to NO-GO if you could not complete the verification** —
-absence of a review is not a pass.
+**Default to `NO-GO` if you could not complete the verification** — absence of a
+review is not a pass. When running the review by hand (no workflow), state the same
+`ATLAS REVIEW: GO` / `ATLAS REVIEW: NO-GO` verdict and reasoning directly instead.
 
 ## What GO and NO-GO actually mean here
 
