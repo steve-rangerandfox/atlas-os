@@ -101,6 +101,7 @@ jobs:
       # the model chose to use.
       - name: Post verdict comment
         if: steps.override.outputs.overridden != 'true'
+        continue-on-error: true   # a transient comment-post failure must not fail a genuine GO; the gate still enforces the verdict
         env:
           GH_TOKEN: ${{ github.token }}
           SO: ${{ steps.review.outputs.structured_output }}
