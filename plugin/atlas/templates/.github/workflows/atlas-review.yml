@@ -1,25 +1,32 @@
 # Atlas independent review — runs the atlas-reviewer role automatically on every PR.
 #
-# This is the required status check `atlas-independent-review`. It is what lets a
-# non-technical owner merge on one informed tap: an adversarial reviewer that did
-# NOT write the change reads the diff, RUNS the repo's own validation (it does not
-# trust that tests pass — it runs them), tries to falsify the change, and posts a
-# plain-language GO / NO-GO to the PR. On NO-GO it fails, which blocks auto-merge.
+# This is the required status check `independent-review`. It lets a non-technical
+# owner merge on one informed tap: an adversarial reviewer that did NOT write the
+# change reads the diff, RUNS the repo's own validation (it does not trust that
+# tests pass — it runs them), tries to falsify the change, and returns a verdict.
 #
-# Risk-class routing is NOT done here — it is done by CODEOWNERS scope. A PR that
-# touches a guarded path additionally requires the owner's review (one tap); a PR
-# that touches only ordinary code needs only this check green, and GitHub
-# auto-merge lands it with no tap. See RUNBOOK "The review-and-merge loop".
+# Verdict capture is DETERMINISTIC. The reviewer's result is forced into a JSON
+# schema (--json-schema) and surfaced as the action's `structured_output`. The
+# workflow — not the model — then posts the human-readable comment and gates the
+# merge on `verdict == GO`. An earlier design asked the model to write a file or
+# post a comment itself; the model's file never reached the runner and no comment
+# was posted, so the gate correctly failed closed but nothing was captured. Reading
+# the action's own structured output removes that whole class of flakiness.
+#
+# Risk-class routing is done by CODEOWNERS, not here: a guarded-path PR also needs
+# the owner's review (one tap); an ordinary-code PR needs only this check green.
 name: atlas-independent-review
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
 
-# Least privilege: read the code, write a PR comment, nothing else.
+# Least privilege: read the code, write a PR comment, mint an OIDC token for the
+# action's auth handshake. Nothing else.
 permissions:
   contents: read
   pull-requests: write
+  id-token: write
 
 concurrency:
   group: atlas-review-${{ github.event.pull_request.number }}
@@ -36,10 +43,9 @@ jobs:
       # ---- Owner override --------------------------------------------------
       # "Block, but I can override." A NO-GO blocks. The owner — and ONLY the
       # owner, verified by the actor who applied the label — may override with a
-      # deliberate, logged act: add the label `atlas-override-review`. The
-      # machine account cannot self-clear a NO-GO, because it is not the owner.
-      # Override bypasses THIS check only; code-owner review on guarded paths
-      # and the test checks still stand.
+      # deliberate, logged act: add the label `atlas-override-review`. The machine
+      # account cannot self-clear a NO-GO, because it is not the owner. Override
+      # bypasses THIS check only; code-owner review on guarded paths still stands.
       - name: Honor owner override
         id: override
         if: contains(github.event.pull_request.labels.*.name, 'atlas-override-review')
@@ -55,13 +61,17 @@ jobs:
           fi
 
       - name: Independent adversarial review
+        id: review
         if: steps.override.outputs.overridden != 'true'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Reviewer model deliberately settable; prefer a different model than
-          # the author used, so review is independent in model as well as context.
-          claude_args: "--model ${{ vars.ATLAS_REVIEWER_MODEL || 'claude-opus-4-8' }}"
+          # Reviewer model deliberately settable; prefer a different model than the
+          # author used, so review is independent in model as well as context.
+          # --json-schema forces the verdict into structured_output (see gate step).
+          claude_args: |
+            --model ${{ vars.ATLAS_REVIEWER_MODEL || 'claude-opus-4-8' }}
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["GO","NO-GO"]},"summary":{"type":"string"},"most_important":{"type":"string"},"blast_radius":{"type":"string"},"unverified":{"type":"string"}},"required":["verdict","summary"]}'
           prompt: |
             You are the Atlas independent reviewer running in CI. You did NOT write
             this change. Follow plugin/atlas/skills/atlas-independent-review/SKILL.md
@@ -70,30 +80,68 @@ jobs:
 
             You MUST:
             1. Read the full diff.
-            2. RUN the repository's own validation — do not trust it. Use the steps
-               in .atlas/project.json's validation ladder if present, else the repo's
+            2. RUN the repository's own validation — do not trust it. Use the steps in
+               .atlas/project.json's validation ladder if present, else the repo's
                `test` / `release:check` scripts, and for atlas-os itself
                `bash plugin/atlas/hooks/atlas-guard.test.sh`. Report the real result.
             3. Confirm the tests exercise the real mechanism, not a harness that
                bypasses it. If they self-fool, that is a NO-GO reason on its own.
             4. Try to falsify the change with concrete inputs.
-            5. Post ONE PR comment: a <=200-word PLAIN-LANGUAGE verdict a non-coder
-               can act on, headed exactly `ATLAS REVIEW: GO` or `ATLAS REVIEW: NO-GO`,
-               then: the one thing that most mattered, what breaks if wrong + whether
-               it is reversible, and one thing you could not verify.
-            6. Write the single token GO or NO-GO to the file ./atlas-verdict.
+            5. Return your verdict as the structured output:
+               - verdict: "GO" or "NO-GO"
+               - summary: a <=200-word PLAIN-LANGUAGE verdict a non-coder can act on
+               - most_important: the one thing that mattered most
+               - blast_radius: what breaks if this is wrong, and whether it is reversible
+               - unverified: one thing you could not verify
+            Do NOT try to write a file or post a comment yourself — the workflow reads
+            your structured output and posts the comment.
+
+      # Deterministic: the WORKFLOW posts the verdict comment from structured_output,
+      # so the human always sees a plain-language GO/NO-GO regardless of what tools
+      # the model chose to use.
+      - name: Post verdict comment
+        if: steps.override.outputs.overridden != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SO: ${{ steps.review.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SO:-}" ]; then
+            echo "::warning::Reviewer produced no structured output; nothing to comment (the gate will fail closed)."
+            exit 0
+          fi
+          verdict=$(printf '%s' "$SO" | jq -r '.verdict // "NO-GO"')
+          summary=$(printf '%s' "$SO" | jq -r '.summary // ""')
+          most=$(printf '%s' "$SO" | jq -r '.most_important // ""')
+          blast=$(printf '%s' "$SO" | jq -r '.blast_radius // ""')
+          unver=$(printf '%s' "$SO" | jq -r '.unverified // ""')
+          {
+            echo "ATLAS REVIEW: $verdict"
+            echo ""
+            echo "$summary"
+            echo ""
+            echo "- **Most important:** $most"
+            echo "- **Blast radius:** $blast"
+            echo "- **Couldn't verify:** $unver"
+            echo ""
+            echo "_Posted by the Atlas independent reviewer (informs, never merges). Owner override: add the \`atlas-override-review\` label._"
+          } > "$RUNNER_TEMP/atlas-comment.md"
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file "$RUNNER_TEMP/atlas-comment.md"
 
       - name: Gate on the verdict
         if: steps.override.outputs.overridden != 'true'
+        env:
+          SO: ${{ steps.review.outputs.structured_output }}
         run: |
           set -euo pipefail
-          if [ ! -f atlas-verdict ]; then
-            echo "::error::Reviewer produced no verdict file. Failing closed — absence of a review is not a pass."
+          if [ -z "${SO:-}" ]; then
+            echo "::error::Reviewer produced no structured output. Failing closed — absence of a review is not a pass."
             exit 1
           fi
-          verdict="$(tr -d '[:space:]' < atlas-verdict)"
-          echo "Verdict: $verdict"
+          verdict=$(printf '%s' "$SO" | jq -r '.verdict // empty')
+          echo "Verdict: ${verdict:-<none>}"
           if [ "$verdict" != "GO" ]; then
-            echo "::error::Independent review returned NO-GO. Merge blocked. Owner may override with the atlas-override-review label after reading the reviewer's comment."
+            echo "::error::Independent review returned NO-GO (or no parseable verdict). Merge blocked. The owner may override by applying the atlas-override-review label after reading the reviewer's comment."
             exit 1
           fi
+          echo "Independent review: GO."
