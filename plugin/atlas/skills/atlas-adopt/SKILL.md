@@ -16,6 +16,7 @@ Read these and record where each fact came from:
 | Node version | `.nvmrc` → `.tool-versions` → `package.json:engines.node` → **stop and ask** |
 | Package manager | lockfile present (`package-lock.json`→npm, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn, `bun.lock*`→bun) → `packageManager` field |
 | Browser tier | resolved `@playwright/test` / `puppeteer` version **from the lockfile, not the range** |
+| Browser names (`{{BROWSERS}}`) | the browsers the project actually tests, as a space-separated `playwright install` arg list. Read `playwright.config.*` → the distinct `projects[].use.browserName` (`chromium` / `firefox` / `webkit`); if none is declared, default to `chromium`. This fills `{{BROWSERS}}` in the devcontainer Dockerfile — leaving it unsourced ships the literal string to `playwright install` and the image build fails. |
 | Validation ladder | `package.json` scripts. Look for an existing aggregate script (`release:check`, `ci`, `verify`) — prefer the project's own canonical signal over inventing one |
 | Test conventions | read two existing test files: runner, assertion style, bootstrap pattern, whether there is a shared fixture |
 | Existing CI | `.github/workflows/*` — extend, do not replace |
@@ -30,7 +31,7 @@ From `templates/`, write into the target repo, filling every `{{TOKEN}}`:
 
 - `.atlas/project.json` — validate against `schemas/project.schema.json`. `runtime.nodeSource` must name where the pin came from.
 - `.atlas/missions/`, `.atlas/proposals/`, `.atlas/evidence/`, `.atlas/reports/`, `.atlas/retrospectives/` (with `.gitkeep`).
-- `.devcontainer/Dockerfile` + `devcontainer.json` — base on the official Playwright image matching the **resolved** browser version, so browsers and their OS libraries come baked. Pin by digest once built.
+- `.devcontainer/Dockerfile` + `devcontainer.json` — base on `node:{{NODE_MAJOR}}-bookworm` (Node is the base, not something apt-installed onto another image's Node, which leaves the wrong Node first on PATH), then `playwright install --with-deps {{BROWSERS}}` so browsers derive from the lockfile-resolved set rather than a hand-matched base-image tag. Fill `{{BROWSERS}}` from the detected browser names (Step 1). Pin by digest once built.
 - `.github/workflows/atlas-devimage.yml` — build and push the dev image to GHCR when the lockfile or Dockerfile changes; emit the digest.
 - `.github/workflows/atlas-validate.yml` — run the ladder in the pinned container. **Every rung is required; a skipped rung fails the job.**
 - `.github/CODEOWNERS` — the human owns `.atlas/**`, `tests/acceptance/**`, `.github/**`, and manifests.
